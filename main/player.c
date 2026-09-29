@@ -527,7 +527,7 @@ static void control_task(void *arg)
         }
         s_last_tick_us = now;
 
-#ifdef AUTOPLAY_TEST
+#ifdef PLAYER_STATUS_LOG  // define to log state, position, buffer and heap every 5 s
         static int64_t last_log;
         if (now - last_log > 5000000 && s_have_session) {
             last_log = now;
