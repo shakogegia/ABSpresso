@@ -1,65 +1,80 @@
-#include <math.h>
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "nvs_flash.h"
+#include "abs_api.h"
 #include "board.h"
+#include "player.h"
+#include "ui.h"
+#include "wifi.h"
 
-static const char *TAG = "main";
-static int s_taps;
-
-static void btn_cb(lv_event_t *e)
+static void show_message(const char *msg)
 {
-    lv_obj_t *label = lv_event_get_user_data(e);
-    lv_label_set_text_fmt(label, "Taps: %d", ++s_taps);
-    ESP_LOGI(TAG, "tap %d", s_taps);
+    lvgl_port_lock(0);
+    ui_show_message(msg);
+    lvgl_port_unlock();
 }
 
-static void tone_test(void)
+static void load_library(abs_book_t **books, int *count)
 {
-    const int rate = 22050, ms = 600;
-    static int16_t buf[2 * 441];
-    board_audio_set_volume(40);
-    if (board_audio_open(rate, 2, 16) != ESP_OK) {
+    abs_book_t *fresh = NULL;
+    int n = 0;
+    if (abs_get_books(&fresh, &n) != ESP_OK) {
+        show_message("Couldn't reach Audiobookshelf.\nTap " LV_SYMBOL_REFRESH " to retry.");
         return;
     }
-    for (int n = 0; n < rate * ms / 1000; n += 441) {
-        for (int i = 0; i < 441; i++) {
-            int16_t v = (int16_t)(6000 * sinf(2 * M_PI * 440 * (n + i) / rate));
-            buf[2 * i] = buf[2 * i + 1] = v;
-        }
-        board_audio_write(buf, sizeof(buf));
-    }
-    board_audio_close();
-    ESP_LOGI(TAG, "tone done");
+    lvgl_port_lock(0);
+    ui_set_books(fresh, n);
+    lvgl_port_unlock();
+    abs_free_books(*books, *count);
+    *books = fresh;
+    *count = n;
 }
 
 void app_main(void)
 {
-    ESP_ERROR_CHECK(board_display_init(NULL));
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
 
+    ESP_ERROR_CHECK(board_display_init(NULL));
     lvgl_port_lock(0);
-    lv_obj_t *scr = lv_screen_active();
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x102040), 0);
-    lv_obj_t *title = lv_label_create(scr);
-    lv_label_set_text(title, "ABS Player");
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 60);
-    lv_obj_t *btn = lv_button_create(scr);
-    lv_obj_set_size(btn, 160, 70);
-    lv_obj_center(btn);
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, "Tap me");
-    lv_obj_center(label);
-    lv_obj_add_event_cb(btn, btn_cb, LV_EVENT_CLICKED, label);
-    lv_obj_t *arc = lv_arc_create(scr);
-    lv_obj_set_size(arc, 340, 340);
-    lv_obj_center(arc);
-    lv_arc_set_value(arc, 40);
+    ui_init();
+    ui_show_message("Connecting to Wi-Fi...");
     lvgl_port_unlock();
 
-    if (board_audio_init() == ESP_OK) {
-        tone_test();
+    ESP_ERROR_CHECK(board_audio_init());
+    abs_api_init();
+    player_init();
+    wifi_start();
+
+    while (!wifi_wait_connected(15000)) {
+        show_message("Still waiting for Wi-Fi...");
+    }
+    show_message("Loading library...");
+
+    abs_book_t *books = NULL;
+    int count = 0;
+    load_library(&books, &count);
+
+    for (;;) {
+        if (ui_take_refresh_request()) {
+            load_library(&books, &count);
+
+#ifdef AUTOPLAY_TEST
+    for (int i = 0; i < count; i++) {
+        if (strncmp(books[i].id, AUTOPLAY_TEST, 8) == 0) {
+            player_open(&books[i]);
+            vTaskDelay(pdMS_TO_TICKS(40000));
+            player_seek_to(1000);
+            vTaskDelay(pdMS_TO_TICKS(25000));
+            player_stop();
+        }
+    }
+#endif
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }

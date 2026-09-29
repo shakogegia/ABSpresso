@@ -1,0 +1,613 @@
+// Audiobook playback over Audiobookshelf's HLS transcode.
+//
+// ABS serves fixed 6 s MPEG-TS segments named output-N.ts, and segment N always starts at N*6 s
+// even after the server restarts its transcoder for a seek. So the playlist is never fetched:
+// playing from time t means fetching segments from floor(t/6) and dropping (t mod 6) s of audio.
+//
+//   fetch task:  HTTPS segment GETs -> stream buffer (PSRAM)
+//   decode task: stream buffer -> TS demux + AAC/MP3 decode -> I2S
+//   control task: commands, session lifecycle, progress sync, status
+
+#include "player.h"
+
+#include <math.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/stream_buffer.h"
+#include "freertos/task.h"
+#include "board.h"
+#include "esp_audio_simple_dec.h"
+#include "esp_audio_dec_default.h"
+#include "esp_audio_simple_dec_default.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "nvs.h"
+
+static const char *TAG = "player";
+
+#define SEGMENT_SECONDS     6.0
+#define STREAM_BUF_SIZE     (512 * 1024)   // about a minute at typical audiobook bitrates
+#define SYNC_INTERVAL_US    (20 * 1000000LL)
+#define SEGMENT_MAX_RETRIES 40
+#define START_THRESHOLD     (48 * 1024)    // bytes buffered before the first decode
+
+typedef enum {
+    CMD_OPEN,
+    CMD_TOGGLE,
+    CMD_SEEK_REL,
+    CMD_SEEK_ABS,
+    CMD_CHAPTER,
+    CMD_STOP,
+    CMD_VOLUME,
+} cmd_type_t;
+
+typedef struct {
+    cmd_type_t type;
+    double arg;
+    char id[40];
+    char title[128];
+    char author[96];
+} cmd_t;
+
+#define BIT_FETCH_IDLE  BIT0
+#define BIT_DECODE_IDLE BIT1
+
+static QueueHandle_t s_cmds;
+static SemaphoreHandle_t s_lock;
+static player_status_t s_status;
+
+// Pipeline. Parameters are only written while both workers are idle.
+static StreamBufferHandle_t s_sbuf;
+static EventGroupHandle_t s_idle;
+static TaskHandle_t s_fetch_task, s_decode_task;
+static volatile bool s_abort;
+static volatile bool s_paused;
+static char s_seg_base[96];
+static int s_start_seg, s_last_seg;
+static double s_skip_seconds;
+
+// Pipeline outputs.
+static volatile bool s_fetch_done, s_fetch_failed, s_decode_done, s_underrun, s_audio_started;
+static volatile int64_t s_frames;   // frames decoded since the start segment
+static volatile int s_rate;
+
+// Control-task state.
+static abs_session_t s_session;
+static bool s_have_session;
+static double s_seg_start_time;
+static double s_listen_since_sync;
+static int64_t s_last_sync_us, s_last_tick_us;
+
+/* ---------- fetch ---------- */
+
+static bool send_all(const uint8_t *p, int len)
+{
+    while (len > 0 && !s_abort) {
+        size_t n = xStreamBufferSend(s_sbuf, p, len, pdMS_TO_TICKS(100));
+        p += n;
+        len -= n;
+    }
+    return len == 0;
+}
+
+static void sleep_unless_abort(int ms)
+{
+    for (int t = 0; t < ms && !s_abort; t += 50) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+// Streams one segment into the buffer. Retries on errors, skipping bytes already delivered.
+static bool fetch_segment(int seg, char *buf, int buf_len)
+{
+    char path[128];
+    snprintf(path, sizeof(path), "%soutput-%d.ts", s_seg_base, seg);
+    int delivered = 0;
+    for (int attempt = 0; attempt < SEGMENT_MAX_RETRIES && !s_abort; attempt++) {
+        if (attempt) {
+            sleep_unless_abort(attempt < 3 ? 500 : 1000);
+        }
+        int status = abs_stream_begin(path);
+        if (status != 200) {
+            // 404: not transcoded yet. 500: the server restarted its transcoder for our seek.
+            ESP_LOGD(TAG, "%s -> %d", path, status);
+            abs_stream_end(status > 0);
+            continue;
+        }
+        int offset = 0;
+        bool ok = true;
+        while (!s_abort) {
+            int n = abs_stream_read(buf, buf_len);
+            if (n < 0) {
+                ok = false;
+                break;
+            }
+            if (n == 0) {
+                ok = abs_stream_complete();
+                break;
+            }
+            int skip = delivered - offset;
+            offset += n;
+            if (skip >= n) continue;
+            if (skip < 0) skip = 0;
+            if (!send_all((uint8_t *)buf + skip, n - skip)) break;
+            delivered += n - skip;
+        }
+        if (s_abort) {
+            abs_stream_end(false);
+            return false;
+        }
+        abs_stream_end(ok);
+        if (ok) {
+            return true;
+        }
+        ESP_LOGW(TAG, "segment %d interrupted after %d bytes, retrying", seg, delivered);
+    }
+    return false;
+}
+
+static void fetch_task(void *arg)
+{
+    const int buf_len = 4096;
+    char *buf = heap_caps_malloc(buf_len, MALLOC_CAP_INTERNAL);
+    for (;;) {
+        xEventGroupSetBits(s_idle, BIT_FETCH_IDLE);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        for (int seg = s_start_seg; seg <= s_last_seg && !s_abort; seg++) {
+            if (!fetch_segment(seg, buf, buf_len)) {
+                if (!s_abort) {
+                    ESP_LOGE(TAG, "giving up on segment %d", seg);
+                    s_fetch_failed = true;
+                }
+                break;
+            }
+        }
+        if (!s_abort && !s_fetch_failed) {
+            s_fetch_done = true;
+        }
+    }
+}
+
+/* ---------- decode ---------- */
+
+static void decode_run(uint8_t *in, int in_len, uint8_t **pcm, uint32_t *pcm_len)
+{
+    esp_audio_simple_dec_cfg_t cfg = {.dec_type = ESP_AUDIO_SIMPLE_DEC_TYPE_TS};
+    esp_audio_simple_dec_handle_t dec = NULL;
+    if (esp_audio_simple_dec_open(&cfg, &dec) != ESP_AUDIO_ERR_OK) {
+        ESP_LOGE(TAG, "decoder open failed");
+        s_fetch_failed = true;
+        return;
+    }
+    int channels = 0;
+    int64_t skip_frames = 0;
+    bool primed = false;
+
+    while (!s_abort) {
+        if (s_paused) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+        // Build a little cushion before starting (and after running dry) so playback doesn't stutter.
+        if (!primed) {
+            if (xStreamBufferBytesAvailable(s_sbuf) < START_THRESHOLD && !s_fetch_done) {
+                s_underrun = true;
+                vTaskDelay(pdMS_TO_TICKS(50));
+                continue;
+            }
+            primed = true;
+        }
+        size_t n = xStreamBufferReceive(s_sbuf, in, in_len, pdMS_TO_TICKS(50));
+        if (n == 0) {
+            if (s_fetch_done) {
+                s_decode_done = true;
+                break;
+            }
+            s_underrun = true;
+            primed = false;
+            continue;
+        }
+        s_underrun = false;
+
+        esp_audio_simple_dec_raw_t raw = {.buffer = in, .len = n};
+        while (raw.len > 0 && !s_abort) {
+            esp_audio_simple_dec_out_t out = {.buffer = *pcm, .len = *pcm_len};
+            esp_audio_err_t ret = esp_audio_simple_dec_process(dec, &raw, &out);
+            if (ret == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
+                uint8_t *bigger = heap_caps_realloc(*pcm, out.needed_size, MALLOC_CAP_INTERNAL);
+                if (!bigger) break;
+                *pcm = bigger;
+                *pcm_len = out.needed_size;
+                continue;
+            }
+            if (ret != ESP_AUDIO_ERR_OK) {
+                ESP_LOGW(TAG, "decode error %d, skipping chunk", ret);
+                break;
+            }
+            raw.buffer += raw.consumed;
+            raw.len -= raw.consumed;
+            if (out.decoded_size == 0) {
+                if (raw.consumed == 0) break;
+                continue;
+            }
+            if (!channels) {
+                esp_audio_simple_dec_info_t info = {0};
+                esp_audio_simple_dec_get_info(dec, &info);
+                ESP_LOGI(TAG, "stream: %lu Hz, %d ch, %d bit", info.sample_rate, info.channel, info.bits_per_sample);
+                if (info.bits_per_sample != 16 || board_audio_open(info.sample_rate, info.channel, 16) != ESP_OK) {
+                    s_fetch_failed = true;
+                    goto out;
+                }
+                channels = info.channel;
+                s_rate = info.sample_rate;
+                skip_frames = (int64_t)(s_skip_seconds * info.sample_rate);
+            }
+            const int frame_bytes = 2 * channels;
+            int frames = out.decoded_size / frame_bytes;
+            int drop = skip_frames < frames ? (int)skip_frames : frames;
+            skip_frames -= drop;
+            if (frames > drop) {
+                board_audio_write((int16_t *)(out.buffer + drop * frame_bytes), (frames - drop) * frame_bytes);
+                s_audio_started = true;
+            }
+            s_frames += frames;
+        }
+    }
+out:
+    esp_audio_simple_dec_close(dec);
+}
+
+static void decode_task(void *arg)
+{
+    const int in_len = 4096;
+    uint8_t *in = heap_caps_malloc(in_len, MALLOC_CAP_INTERNAL);
+    uint32_t pcm_len = 8192;
+    uint8_t *pcm = heap_caps_malloc(pcm_len, MALLOC_CAP_INTERNAL);
+    for (;;) {
+        xEventGroupSetBits(s_idle, BIT_DECODE_IDLE);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        decode_run(in, in_len, &pcm, &pcm_len);
+    }
+}
+
+/* ---------- pipeline control (control task only) ---------- */
+
+static void pipeline_stop(void)
+{
+    s_abort = true;
+    xEventGroupWaitBits(s_idle, BIT_FETCH_IDLE | BIT_DECODE_IDLE, pdFALSE, pdTRUE, portMAX_DELAY);
+    xStreamBufferReset(s_sbuf);
+}
+
+static double current_position(void)
+{
+    int rate = s_rate;
+    return rate ? s_seg_start_time + (double)s_frames / rate : s_seg_start_time + s_skip_seconds;
+}
+
+static void pipeline_start(double t)
+{
+    pipeline_stop();
+    if (t < 0) t = 0;
+    if (t > s_session.duration - 1) t = fmax(0, s_session.duration - 1);
+    snprintf(s_seg_base, sizeof(s_seg_base), "%.*s", (int)(strrchr(s_session.hls_path, '/') - s_session.hls_path + 1),
+             s_session.hls_path);
+    s_start_seg = (int)(t / SEGMENT_SECONDS);
+    s_last_seg = (int)ceil(s_session.duration / SEGMENT_SECONDS) - 1;
+    s_seg_start_time = s_start_seg * SEGMENT_SECONDS;
+    s_skip_seconds = t - s_seg_start_time;
+    s_frames = 0;
+    s_rate = 0;
+    s_fetch_done = s_fetch_failed = s_decode_done = s_audio_started = false;
+    s_underrun = true;
+    ESP_LOGI(TAG, "play from %.1f s (segment %d of %d)", t, s_start_seg, s_last_seg);
+
+    xEventGroupClearBits(s_idle, BIT_FETCH_IDLE | BIT_DECODE_IDLE);
+    s_abort = false;
+    xTaskNotifyGive(s_fetch_task);
+    xTaskNotifyGive(s_decode_task);
+}
+
+/* ---------- status helpers ---------- */
+
+static void set_state(player_state_t st)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_status.state = st;
+    xSemaphoreGive(s_lock);
+}
+
+static void update_status(void)
+{
+    if (!s_have_session) return;  // keep showing the last position
+    double pos = current_position();
+    int ci = -1;
+    for (int i = 0; i < s_session.chapter_count; i++) {
+        if (pos >= s_session.chapters[i].start && pos < s_session.chapters[i].end) {
+            ci = i;
+            break;
+        }
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_status.position = pos;
+    s_status.duration = s_session.duration;
+    s_status.chapter_index = ci;
+    s_status.chapter_count = s_session.chapter_count;
+    if (ci >= 0) {
+        strlcpy(s_status.chapter, s_session.chapters[ci].title, sizeof(s_status.chapter));
+        s_status.chapter_start = s_session.chapters[ci].start;
+        s_status.chapter_end = s_session.chapters[ci].end;
+    } else {
+        s_status.chapter[0] = 0;
+        s_status.chapter_start = 0;
+        s_status.chapter_end = s_session.duration;
+    }
+    s_status.buffer_percent = s_sbuf ? (int)(100 * xStreamBufferBytesAvailable(s_sbuf) / STREAM_BUF_SIZE) : 0;
+
+    player_state_t st = s_status.state;
+    if (st == PLAYER_PLAYING || st == PLAYER_BUFFERING) {
+        if (s_fetch_failed) {
+            st = PLAYER_ERROR;
+        } else if (s_decode_done) {
+            st = PLAYER_FINISHED;
+        } else {
+            st = (s_underrun || !s_audio_started) ? PLAYER_BUFFERING : PLAYER_PLAYING;
+        }
+        s_status.state = st;
+    }
+    xSemaphoreGive(s_lock);
+}
+
+static void sync_progress(bool force)
+{
+    if (!s_have_session || s_listen_since_sync <= 0) return;
+    int64_t now = esp_timer_get_time();
+    if (!force && now - s_last_sync_us < SYNC_INTERVAL_US) return;
+    if (abs_sync_session(s_session.id, current_position(), s_listen_since_sync, s_session.duration) == ESP_OK) {
+        s_listen_since_sync = 0;
+    }
+    s_last_sync_us = now;
+}
+
+static void close_session(void)
+{
+    if (!s_have_session) return;
+    pipeline_stop();
+    abs_close_session(s_session.id, current_position(), s_listen_since_sync);
+    abs_free_session(&s_session);
+    s_have_session = false;
+    s_listen_since_sync = 0;
+    board_audio_close();
+}
+
+static bool open_session(const char *item_id)
+{
+    set_state(PLAYER_LOADING);
+    if (abs_start_session(item_id, &s_session) != ESP_OK) {
+        set_state(PLAYER_ERROR);
+        return false;
+    }
+    s_have_session = true;
+    s_last_sync_us = esp_timer_get_time();
+    return true;
+}
+
+static void seek_to(double t)
+{
+    if (!s_have_session) return;
+    sync_progress(true);
+    pipeline_start(t);
+    set_state(s_paused ? PLAYER_PAUSED : PLAYER_BUFFERING);
+}
+
+/* ---------- control task ---------- */
+
+static void handle(const cmd_t *c)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    player_state_t st = s_status.state;
+    xSemaphoreGive(s_lock);
+
+    switch (c->type) {
+    case CMD_OPEN:
+        if (s_have_session && strcmp(c->id, s_status.item_id) == 0 && st != PLAYER_ERROR) {
+            break;  // already loaded
+        }
+        close_session();
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        strlcpy(s_status.item_id, c->id, sizeof(s_status.item_id));
+        strlcpy(s_status.title, c->title, sizeof(s_status.title));
+        strlcpy(s_status.author, c->author, sizeof(s_status.author));
+        s_status.chapter[0] = 0;
+        s_status.position = 0;
+        xSemaphoreGive(s_lock);
+        if (open_session(c->id)) {
+            s_paused = false;
+            pipeline_start(s_session.current_time);
+            set_state(PLAYER_BUFFERING);
+        }
+        break;
+
+    case CMD_TOGGLE:
+        if (st == PLAYER_ERROR && s_status.item_id[0]) {
+            // Reopen at our last known position; the old session may be gone server-side.
+            double pos = s_have_session ? current_position() : -1;
+            close_session();
+            if (open_session(s_status.item_id)) {
+                s_paused = false;
+                pipeline_start(pos >= 0 ? pos : s_session.current_time);
+                set_state(PLAYER_BUFFERING);
+            }
+        } else if (st == PLAYER_PAUSED) {
+            s_paused = false;
+            set_state(PLAYER_BUFFERING);
+        } else if (st == PLAYER_PLAYING || st == PLAYER_BUFFERING) {
+            s_paused = true;
+            set_state(PLAYER_PAUSED);
+            sync_progress(true);
+        } else if (st == PLAYER_FINISHED && s_status.item_id[0]) {
+            close_session();
+            if (open_session(s_status.item_id)) {
+                s_paused = false;
+                pipeline_start(0);
+                set_state(PLAYER_BUFFERING);
+            }
+        }
+        break;
+
+    case CMD_SEEK_REL:
+        seek_to(current_position() + c->arg);
+        break;
+
+    case CMD_SEEK_ABS:
+        seek_to(c->arg);
+        break;
+
+    case CMD_CHAPTER: {
+        if (!s_have_session || s_session.chapter_count == 0) break;
+        double pos = current_position();
+        int ci = 0;
+        for (int i = 0; i < s_session.chapter_count; i++) {
+            if (pos >= s_session.chapters[i].start) ci = i;
+        }
+        if (c->arg < 0 && pos - s_session.chapters[ci].start > 3) {
+            // First press restarts the current chapter, like most players.
+        } else {
+            ci += (int)c->arg;
+        }
+        if (ci < 0) ci = 0;
+        if (ci >= s_session.chapter_count) break;
+        seek_to(s_session.chapters[ci].start);
+        break;
+    }
+
+    case CMD_STOP:
+        close_session();
+        s_paused = false;
+        set_state(PLAYER_IDLE);
+        break;
+
+    case CMD_VOLUME: {
+        int v = (int)c->arg;
+        board_audio_set_volume(v);
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        s_status.volume = v;
+        xSemaphoreGive(s_lock);
+        nvs_handle_t h;
+        if (nvs_open("player", NVS_READWRITE, &h) == ESP_OK) {
+            nvs_set_u8(h, "volume", v);
+            nvs_commit(h);
+            nvs_close(h);
+        }
+        break;
+    }
+    }
+}
+
+static void control_task(void *arg)
+{
+    s_last_tick_us = esp_timer_get_time();
+    for (;;) {
+        cmd_t c;
+        if (xQueueReceive(s_cmds, &c, pdMS_TO_TICKS(250))) {
+            handle(&c);
+        }
+        update_status();
+
+        int64_t now = esp_timer_get_time();
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        player_state_t st = s_status.state;
+        xSemaphoreGive(s_lock);
+        if (st == PLAYER_PLAYING) {
+            s_listen_since_sync += (now - s_last_tick_us) / 1e6;
+        }
+        s_last_tick_us = now;
+
+#ifdef AUTOPLAY_TEST
+        static int64_t last_log;
+        if (now - last_log > 5000000 && s_have_session) {
+            last_log = now;
+            ESP_LOGI(TAG, "state %d pos %.1f buf %d%% heap int %u psram %u", st, current_position(),
+                     (int)(100 * xStreamBufferBytesAvailable(s_sbuf) / STREAM_BUF_SIZE),
+                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        }
+#endif
+        if (st == PLAYER_PLAYING) {
+            sync_progress(false);
+        } else if (st == PLAYER_FINISHED && s_have_session) {
+            ESP_LOGI(TAG, "book finished");
+            close_session();
+        }
+    }
+}
+
+/* ---------- public ---------- */
+
+void player_init(void)
+{
+    s_lock = xSemaphoreCreateMutex();
+    s_cmds = xQueueCreate(8, sizeof(cmd_t));
+    s_idle = xEventGroupCreate();
+
+    uint8_t *storage = heap_caps_malloc(STREAM_BUF_SIZE + 1, MALLOC_CAP_SPIRAM);
+    static StaticStreamBuffer_t sb_struct;
+    s_sbuf = xStreamBufferCreateStatic(STREAM_BUF_SIZE, 1, storage, &sb_struct);
+
+    // The TS demuxer opens its inner AAC/MP3 decoder through the base registry, so register both.
+    esp_audio_dec_register_default();
+    esp_audio_simple_dec_register_default();
+
+    uint8_t vol = 60;
+    nvs_handle_t h;
+    if (nvs_open("player", NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, "volume", &vol);
+        nvs_close(h);
+    }
+    s_status.volume = vol;
+    s_status.chapter_index = -1;
+    board_audio_set_volume(vol);
+
+    // Network on core 0 with Wi-Fi; decoding on core 1 above LVGL so audio never starves.
+    xTaskCreatePinnedToCore(fetch_task, "abs_fetch", 8192, NULL, 5, &s_fetch_task, 0);
+    xTaskCreatePinnedToCore(decode_task, "abs_decode", 16384, NULL, 6, &s_decode_task, 1);
+    xTaskCreatePinnedToCore(control_task, "abs_ctrl", 8192, NULL, 4, NULL, 0);
+}
+
+static void post(cmd_type_t type, double arg)
+{
+    cmd_t c = {.type = type, .arg = arg};
+    xQueueSend(s_cmds, &c, 0);
+}
+
+void player_open(const abs_book_t *book)
+{
+    cmd_t c = {.type = CMD_OPEN};
+    strlcpy(c.id, book->id, sizeof(c.id));
+    strlcpy(c.title, book->title, sizeof(c.title));
+    strlcpy(c.author, book->author, sizeof(c.author));
+    xQueueSend(s_cmds, &c, 0);
+}
+
+void player_toggle(void) { post(CMD_TOGGLE, 0); }
+void player_seek_relative(double seconds) { post(CMD_SEEK_REL, seconds); }
+void player_seek_to(double seconds) { post(CMD_SEEK_ABS, seconds); }
+void player_chapter_step(int delta) { post(CMD_CHAPTER, delta); }
+void player_stop(void) { post(CMD_STOP, 0); }
+
+void player_set_volume(int volume)
+{
+    if (volume < 0) volume = 0;
+    if (volume > 100) volume = 100;
+    post(CMD_VOLUME, volume);
+}
+
+void player_get_status(player_status_t *out)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    *out = s_status;
+    xSemaphoreGive(s_lock);
+}
