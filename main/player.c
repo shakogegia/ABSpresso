@@ -75,6 +75,12 @@ static volatile bool s_fetch_done, s_fetch_failed, s_decode_done, s_underrun, s_
 static volatile int64_t s_frames;   // frames decoded since the start segment
 static volatile int s_rate;
 
+#ifdef PLAYER_STATUS_LOG
+static volatile uint32_t s_dbg_bytes_in, s_dbg_dec_err, s_dbg_write_max_us, s_dbg_underruns;
+static double s_dbg_env_sum;
+static int s_dbg_env_frames, s_dbg_env_block;
+#endif
+
 // Control-task state.
 static abs_session_t s_session;
 static bool s_have_session;
@@ -209,11 +215,21 @@ static void decode_run(uint8_t *in, int in_len, uint8_t **pcm, uint32_t *pcm_len
             }
             s_underrun = true;
             primed = false;
+#ifdef PLAYER_STATUS_LOG
+            s_dbg_underruns++;
+#endif
             continue;
         }
         s_underrun = false;
+#ifdef PLAYER_STATUS_LOG
+        s_dbg_bytes_in += n;
+#endif
 
+        // Keep calling until the whole chunk is consumed, as the library's own tests do: a call can
+        // legitimately consume and output nothing while the parser advances, and `in` must not be
+        // overwritten while any of it is unconsumed.
         esp_audio_simple_dec_raw_t raw = {.buffer = in, .len = n};
+        int idle_calls = 0;
         while (raw.len > 0 && !s_abort) {
             esp_audio_simple_dec_out_t out = {.buffer = *pcm, .len = *pcm_len};
             esp_audio_err_t ret = esp_audio_simple_dec_process(dec, &raw, &out);
@@ -222,18 +238,31 @@ static void decode_run(uint8_t *in, int in_len, uint8_t **pcm, uint32_t *pcm_len
                 if (!bigger) break;
                 *pcm = bigger;
                 *pcm_len = out.needed_size;
+                raw.buffer += raw.consumed;
+                raw.len -= raw.consumed;
                 continue;
             }
             if (ret != ESP_AUDIO_ERR_OK) {
-                ESP_LOGW(TAG, "decode error %d, skipping chunk", ret);
-                break;
+#ifdef PLAYER_STATUS_LOG
+                s_dbg_dec_err++;
+#endif
+                ESP_LOGW(TAG, "decode error %d", ret);
+                // Skip past the bad data (at least one 188-byte TS packet) rather than the whole buffer.
+                uint32_t skip = raw.consumed ? raw.consumed : (raw.len < 188 ? raw.len : 188);
+                raw.buffer += skip;
+                raw.len -= skip;
+                continue;
             }
             raw.buffer += raw.consumed;
             raw.len -= raw.consumed;
             if (out.decoded_size == 0) {
-                if (raw.consumed == 0) break;
+                if (raw.consumed == 0 && ++idle_calls > 64) {
+                    ESP_LOGW(TAG, "decoder made no progress on %lu bytes, dropping them", raw.len);
+                    break;
+                }
                 continue;
             }
+            idle_calls = 0;
             if (!channels) {
                 esp_audio_simple_dec_info_t info = {0};
                 esp_audio_simple_dec_get_info(dec, &info);
@@ -250,11 +279,29 @@ static void decode_run(uint8_t *in, int in_len, uint8_t **pcm, uint32_t *pcm_len
             int frames = out.decoded_size / frame_bytes;
             int drop = skip_frames < frames ? (int)skip_frames : frames;
             skip_frames -= drop;
+#ifdef PLAYER_STATUS_LOG
+            // Loudness envelope in 0.5 s blocks, to compare against a host decode of the same segments.
+            for (int i = 0; i < frames * channels; i++) {
+                double v = ((int16_t *)out.buffer)[i];
+                s_dbg_env_sum += v * v;
+            }
+            s_dbg_env_frames += frames;
+            if (s_dbg_env_frames >= s_rate / 2 && s_dbg_env_block < 60) {
+                printf("ENV %d %.0f\n", s_dbg_env_block++, sqrt(s_dbg_env_sum / (s_dbg_env_frames * channels)));
+                s_dbg_env_sum = 0;
+                s_dbg_env_frames = 0;
+            }
+            int64_t w0 = esp_timer_get_time();
+#endif
             if (frames > drop) {
                 board_audio_write((int16_t *)(out.buffer + drop * frame_bytes), (frames - drop) * frame_bytes);
                 s_audio_started = true;
             }
             s_frames += frames;
+#ifdef PLAYER_STATUS_LOG
+            uint32_t wus = esp_timer_get_time() - w0;
+            if (wus > s_dbg_write_max_us) s_dbg_write_max_us = wus;
+#endif
         }
     }
 out:
@@ -364,6 +411,10 @@ static void update_status(void)
 
 static void sync_progress(bool force)
 {
+#ifdef PLAYER_NO_SYNC
+    s_listen_since_sync = 0;
+    return;
+#endif
     if (!s_have_session || s_listen_since_sync <= 0) return;
     int64_t now = esp_timer_get_time();
     if (!force && now - s_last_sync_us < SYNC_INTERVAL_US) return;
@@ -527,13 +578,15 @@ static void control_task(void *arg)
         }
         s_last_tick_us = now;
 
-#ifdef PLAYER_STATUS_LOG  // define to log state, position, buffer and heap every 5 s
+#ifdef PLAYER_STATUS_LOG  // define to log pipeline stats every second
         static int64_t last_log;
-        if (now - last_log > 5000000 && s_have_session) {
+        if (now - last_log > 1000000 && s_have_session) {
             last_log = now;
-            ESP_LOGI(TAG, "state %d pos %.1f buf %d%% heap int %u psram %u", st, current_position(),
-                     (int)(100 * xStreamBufferBytesAvailable(s_sbuf) / STREAM_BUF_SIZE),
-                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+            ESP_LOGI(TAG, "st %d pos %.1f buf %d%% in %lu B/s err %lu wmax %lu us undr %lu int %u", st,
+                     current_position(), (int)(100 * xStreamBufferBytesAvailable(s_sbuf) / STREAM_BUF_SIZE),
+                     s_dbg_bytes_in, s_dbg_dec_err, s_dbg_write_max_us, s_dbg_underruns,
+                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+            s_dbg_bytes_in = s_dbg_write_max_us = 0;
         }
 #endif
         if (st == PLAYER_PLAYING) {

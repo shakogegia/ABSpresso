@@ -62,18 +62,6 @@ void app_main(void)
     for (;;) {
         if (ui_take_refresh_request()) {
             load_library(&books, &count);
-
-#ifdef AUTOPLAY_TEST
-    for (int i = 0; i < count; i++) {
-        if (strncmp(books[i].id, AUTOPLAY_TEST, 8) == 0) {
-            player_open(&books[i]);
-            vTaskDelay(pdMS_TO_TICKS(40000));
-            player_seek_to(1000);
-            vTaskDelay(pdMS_TO_TICKS(25000));
-            player_stop();
-        }
-    }
-#endif
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
