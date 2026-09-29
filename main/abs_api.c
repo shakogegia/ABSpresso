@@ -171,11 +171,7 @@ static double json_num(const cJSON *obj, const char *key)
 static int book_cmp(const void *pa, const void *pb)
 {
     const abs_book_t *a = pa, *b = pb;
-    bool a_active = a->current_time > 0 && !a->finished;
-    bool b_active = b->current_time > 0 && !b->finished;
-    if (a_active != b_active) return a_active ? -1 : 1;
-    if (a_active && a->last_update != b->last_update) return a->last_update > b->last_update ? -1 : 1;
-    return strcasecmp(a->title, b->title);
+    return strcasecmp(a->sort_title, b->sort_title);
 }
 
 esp_err_t abs_get_books(abs_book_t **out_books, int *out_count)
@@ -226,6 +222,8 @@ esp_err_t abs_get_books(abs_book_t **out_books, int *out_count)
         abs_book_t *b = &books[count++];
         strlcpy(b->id, id, sizeof(b->id));
         b->title = psram_strdup(json_str(meta, "title") ?: "Untitled");
+        b->sort_title = psram_strdup(json_str(meta, "titleIgnorePrefix") ?: b->title);
+        b->added_at = json_num(it, "addedAt");
         b->author = psram_strdup(json_str(meta, "authorName") ?: "");
         b->duration = json_num(media, "duration");
     }
@@ -263,6 +261,7 @@ void abs_free_books(abs_book_t *books, int count)
 {
     for (int i = 0; i < count; i++) {
         free(books[i].title);
+        free(books[i].sort_title);
         free(books[i].author);
     }
     free(books);

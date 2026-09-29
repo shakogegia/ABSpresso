@@ -10,12 +10,14 @@
 typedef struct {
     char id[40];
     char *title;
-    char *author;
+    char *sort_title;      // title without a leading "The"/"A" (server-provided), for A-Z
+    char *author;          // may list several authors separated by ", "
     double duration;
     double current_time;   // saved progress, seconds
     float progress;        // 0..1
     bool finished;
     double last_update;    // progress timestamp (ms), 0 if never played
+    double added_at;       // when the item was added to the library (ms)
 } abs_book_t;
 
 typedef struct {
@@ -35,7 +37,7 @@ typedef struct {
 
 void abs_api_init(void);
 
-// Books from the first book library, in-progress first (most recent), then by title.
+// Books from the first book library, sorted A-Z by sort_title.
 esp_err_t abs_get_books(abs_book_t **out_books, int *out_count);
 void abs_free_books(abs_book_t *books, int count);
 

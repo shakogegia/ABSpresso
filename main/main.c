@@ -1,5 +1,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "nvs_flash.h"
 #include "abs_api.h"
@@ -60,6 +62,8 @@ void app_main(void)
     abs_book_t *books = NULL;
     int count = 0;
     load_library(&books, &count);
+    ESP_LOGI("main", "free after library load: internal %u, PSRAM %u",
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     for (;;) {
         if (ui_take_refresh_request()) {
