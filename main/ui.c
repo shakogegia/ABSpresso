@@ -63,6 +63,15 @@ lv_obj_t *ui_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, in
     return l;
 }
 
+void ui_one_line(lv_obj_t *label, const lv_font_t *font)
+{
+    // "..." truncation only happens when the height is fixed; otherwise the label wraps.
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_obj_set_height(label, lv_font_get_line_height(font));
+}
+
 lv_obj_t *ui_page_container(lv_obj_t *parent)
 {
     lv_obj_t *p = lv_obj_create(parent);
@@ -76,6 +85,8 @@ void ui_book_subtitle(const abs_book_t *b, char *buf, size_t len)
 {
     if (b->finished) {
         snprintf(buf, len, "%s  " LV_SYMBOL_OK, b->author);
+    } else if (b->current_time > 0 && b->progress < 0.01f) {
+        snprintf(buf, len, "%s  " LV_SYMBOL_BULLET " <1%%", b->author);
     } else if (b->current_time > 0) {
         snprintf(buf, len, "%s  " LV_SYMBOL_BULLET " %d%%", b->author, (int)(b->progress * 100));
     } else {
@@ -107,17 +118,14 @@ lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index)
 
     lv_obj_t *t = lv_label_create(btn);
     lv_label_set_text(t, b->title);
-    lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(t, lv_pct(100));
+    ui_one_line(t, &lv_font_montserrat_16);
     lv_obj_set_style_text_color(t, COLOR_TEXT, 0);
 
     char sub[160];
     ui_book_subtitle(b, sub, sizeof(sub));
     lv_obj_t *a = lv_label_create(btn);
     lv_label_set_text(a, sub);
-    lv_label_set_long_mode(a, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(a, lv_pct(100));
-    lv_obj_set_style_text_font(a, &lv_font_montserrat_14, 0);
+    ui_one_line(a, &lv_font_montserrat_14);
     lv_obj_set_style_text_color(a, ui_book_in_progress(b) ? COLOR_ACCENT : COLOR_MUTED, 0);
 
     lv_obj_add_event_cb(btn, on_book_row_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)book_index);
@@ -276,6 +284,13 @@ static void build_authors(void)
         while (p && *p) {
             const char *end = strstr(p, ", ");
             size_t len = end ? (size_t)(end - p) : strlen(p);
+            // Server data can carry stray spaces ("Joe White "), which would break surname sorting.
+            const char *next = end ? end + 2 : NULL;
+            while (len && *p == ' ') {
+                p++;
+                len--;
+            }
+            while (len && p[len - 1] == ' ') len--;
             if (len) {
                 int a = 0;
                 while (a < n && !(strlen(authors[a].name) == len && strncasecmp(authors[a].name, p, len) == 0)) a++;
@@ -296,7 +311,7 @@ static void build_authors(void)
                     bl->idx[bl->count++] = i;
                 }
             }
-            p = end ? end + 2 : NULL;
+            p = next;
         }
     }
     qsort(authors, n, sizeof(author_t), cmp_author);

@@ -53,6 +53,8 @@ lv_obj_t *ui_round_button(lv_obj_t *parent, int size, const char *text, const lv
                           void *user);
 lv_obj_t *ui_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, int width);
 lv_obj_t *ui_page_container(lv_obj_t *parent);
+// Makes a label a single full-width line that ends in "..." when too long.
+void ui_one_line(lv_obj_t *label, const lv_font_t *font);
 void ui_book_subtitle(const abs_book_t *b, char *buf, size_t len);
 bool ui_book_in_progress(const abs_book_t *b);
 lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index);

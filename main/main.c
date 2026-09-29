@@ -64,6 +64,10 @@ void app_main(void)
     load_library(&books, &count);
     ESP_LOGI("main", "free after library load: internal %u, PSRAM %u",
              heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#ifdef UI_CAPTURE
+    void ui_capture_start(void);
+    ui_capture_start();
+#endif
 
     for (;;) {
         if (ui_take_refresh_request()) {

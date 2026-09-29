@@ -660,6 +660,11 @@ void player_set_volume(int volume)
 
 void player_get_status(player_status_t *out)
 {
+    if (!s_lock) {  // not initialised yet (the UI starts first)
+        memset(out, 0, sizeof(*out));
+        out->chapter_index = -1;
+        return;
+    }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_status;
     xSemaphoreGive(s_lock);

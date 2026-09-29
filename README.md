@@ -26,6 +26,25 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
   previous/next chapter and volume. When nothing is loaded it offers your most recent book to
   resume.
 
+## Screenshots
+
+Captured on the device itself (see [Capturing screenshots](#capturing-screenshots)).
+
+| Home | Library | Now Playing |
+| :---: | :---: | :---: |
+| <img src="docs/media/home_continue.png" width="240"> | <img src="docs/media/library_list.png" width="240"> | <img src="docs/media/player_resume.png" width="240"> |
+| <img src="docs/media/home_recent.png" width="240"> | <img src="docs/media/library_covers.png" width="240"> | <img src="docs/media/library_authors.png" width="240"> |
+
+| Browsing covers | Resuming a book |
+| :---: | :---: |
+| <img src="docs/media/carousel.gif" width="300"> | <img src="docs/media/playing.gif" width="300"> |
+
+<img src="docs/media/library_scrub.png" width="200" align="right">
+
+Dragging the ring on the Library page's right edge jumps through the list A-Z, with the current
+letter shown large.
+<br clear="right">
+
 ## Hardware
 
 **[Waveshare ESP32-S3-Touch-LCD-1.85C](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.85C)**, **V1 revision**:
@@ -146,6 +165,28 @@ The console is on the board's native USB (USB-Serial/JTAG).
 - **Debugging aids:** define `PLAYER_STATUS_LOG` (e.g. with `target_compile_definitions` in
   `main/CMakeLists.txt`) to log pipeline stats every second: input rate, decode errors, I2S timing,
   underruns, a loudness envelope and free heap. `PLAYER_NO_SYNC` disables progress sync for tests.
+
+## Capturing screenshots
+
+The screenshots and GIFs above come from the device itself. Build with `UI_CAPTURE` (and
+`PLAYER_NO_SYNC`, so the demo playback doesn't move your real progress) by adding this to
+`main/CMakeLists.txt`:
+
+```cmake
+target_compile_definitions(${COMPONENT_LIB} PRIVATE UI_CAPTURE PLAYER_NO_SYNC)
+```
+
+After the library loads, `main/ui_capture.c` runs a scripted tour of the UI and streams each frame
+over the console as base64 RGB565. LVGL's clock is replaced by a virtual one that only advances when
+the script says so, so animation frames land at exact moments even though each frame takes a
+second or two to send. Record the console to a file, then convert it:
+
+```sh
+python3 tools/capture_to_media.py serial.log docs/media   # needs ffmpeg
+```
+
+Frames named `<name>_NNN` become `<name>.gif` (using each frame's hold time); the rest become PNGs
+masked to the round panel. Note that the capture shows your own library's titles and covers.
 
 ## Known limitations
 

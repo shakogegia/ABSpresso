@@ -20,7 +20,6 @@ static row_t s_rows[] = {
 #define ROW_COUNT (int)(sizeof(s_rows) / sizeof(s_rows[0]))
 
 static lv_obj_t *s_page, *s_group, *s_title, *s_hint, *s_empty;
-static lv_obj_t *s_dots[ROW_COUNT];
 static carousel_t *s_carousel;
 static int s_row = -1;
 
@@ -74,11 +73,6 @@ static void show_row(int r, int dir)
     lv_obj_t *pill = lv_obj_get_parent(s_hint);
     if (hint[0]) lv_obj_remove_flag(pill, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(pill, LV_OBJ_FLAG_HIDDEN);
-    for (int i = 0; i < ROW_COUNT; i++) {
-        lv_obj_set_style_bg_color(s_dots[i], i == r ? COLOR_ACCENT : COLOR_CARD, 0);
-        if (row_has_books(i)) lv_obj_remove_flag(s_dots[i], LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_dots[i], LV_OBJ_FLAG_HIDDEN);
-    }
 
     if (dir) {
         // Slide the new shelf in from the direction of travel.
@@ -153,15 +147,6 @@ void home_build(lv_obj_t *page)
     s_hint = ui_label(pill, &lv_font_montserrat_14, COLOR_MUTED, 0);
     lv_obj_center(s_hint);
 
-    // Row indicator dots down the right edge.
-    for (int i = 0; i < ROW_COUNT; i++) {
-        s_dots[i] = lv_obj_create(page);
-        lv_obj_remove_style_all(s_dots[i]);
-        lv_obj_set_size(s_dots[i], 8, 8);
-        lv_obj_set_style_radius(s_dots[i], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_opa(s_dots[i], LV_OPA_COVER, 0);
-        lv_obj_align(s_dots[i], LV_ALIGN_RIGHT_MID, -16, (i - (ROW_COUNT - 1) / 2.0) * 16);
-    }
 
     s_empty = ui_label(page, &lv_font_montserrat_16, COLOR_MUTED, 240);
     lv_label_set_long_mode(s_empty, LV_LABEL_LONG_WRAP);
@@ -184,3 +169,10 @@ void home_refresh(void)
     if (s_row >= 0) carousel_refresh(s_carousel);
 }
 
+
+#ifdef UI_CAPTURE
+void home_debug_next_row(void)
+{
+    on_hint_clicked(NULL);
+}
+#endif

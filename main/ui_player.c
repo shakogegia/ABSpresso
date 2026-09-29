@@ -29,6 +29,17 @@ static void flash_state(const char *text)
     s_state_override_until = lv_tick_get() + 1500;
 }
 
+// "11h 21m left  •  34%", with "<1%" for a book that has only just been started.
+static void fmt_remaining(char *buf, size_t len, double position, double duration)
+{
+    int left = (int)(duration - position);
+    double frac = duration > 0 ? position / duration : 0;
+    char pct[8];
+    if (frac > 0 && frac < 0.01) snprintf(pct, sizeof(pct), "<1%%");
+    else snprintf(pct, sizeof(pct), "%d%%", (int)(100 * frac));
+    snprintf(buf, len, "%dh %02dm left  " LV_SYMBOL_BULLET "  %s", left / 3600, (left / 60) % 60, pct);
+}
+
 static bool player_loaded(const player_status_t *st)
 {
     return st->state != PLAYER_IDLE && st->item_id[0];
@@ -68,6 +79,10 @@ static void on_volume(lv_event_t *e)
 static void on_arc_event(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
+    if (code != LV_EVENT_PRESSED && code != LV_EVENT_VALUE_CHANGED && code != LV_EVENT_RELEASED &&
+        code != LV_EVENT_PRESS_LOST) {
+        return;  // layout/draw events arrive too, some before the player exists
+    }
     player_status_t st;
     player_get_status(&st);
     double len = st.chapter_end - st.chapter_start;
@@ -126,9 +141,7 @@ static void refresh_idle(void)
     set_text(s_chapter, b->author);
     if (lv_tick_get() > s_state_override_until) set_text(s_state, "Tap " LV_SYMBOL_PLAY " to resume");
     char buf[48];
-    int left = (int)(b->duration - b->current_time);
-    snprintf(buf, sizeof(buf), "%dh %02dm left  " LV_SYMBOL_BULLET "  %d%%", left / 3600, (left / 60) % 60,
-             (int)(b->progress * 100));
+    fmt_remaining(buf, sizeof(buf), b->current_time, b->duration);
     set_text(s_remaining, buf);
     set_text(s_time, "");
     lv_arc_set_value(s_arc, (int)(1000 * b->progress));
@@ -176,9 +189,7 @@ void playing_refresh(void)
         snprintf(buf, sizeof(buf), "%s / %s", a, b);
         set_text(s_time, buf);
 
-        int left = (int)(st.duration - st.position);
-        snprintf(buf, sizeof(buf), "%dh %02dm left  " LV_SYMBOL_BULLET "  %d%%", left / 3600, (left / 60) % 60,
-                 (int)(100 * st.position / st.duration));
+        fmt_remaining(buf, sizeof(buf), st.position, st.duration);
         set_text(s_remaining, buf);
     }
 }

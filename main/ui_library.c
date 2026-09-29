@@ -65,6 +65,22 @@ static void scroll_list_to(lv_obj_t *list, int child)
 
 /* ---------- views ---------- */
 
+static void sync_ring(void)
+{
+    lv_obj_t *l = s_view == VIEW_LIST      ? s_list
+                  : s_view == VIEW_AUTHORS ? s_authors
+                  : s_view == VIEW_AUTHOR_BOOKS ? s_author_books
+                                                : NULL;
+    int value = 0;
+    if (l) {
+        int32_t top = lv_obj_get_scroll_y(l), rest = lv_obj_get_scroll_bottom(l);
+        if (top + rest > 0) value = (int)(1000LL * top / (top + rest));
+    } else if (carousel_count(s_carousel) > 1) {
+        value = 1000 * carousel_pos(s_carousel) / (carousel_count(s_carousel) - 1);
+    }
+    lv_arc_set_value(s_ring, value);
+}
+
 static void apply_view(void)
 {
     set_hidden(s_list, s_view != VIEW_LIST);
@@ -73,6 +89,8 @@ static void apply_view(void)
     carousel_set_hidden(s_carousel, s_view != VIEW_COVERS);
     uint32_t tab = s_view == VIEW_AUTHOR_BOOKS ? VIEW_AUTHORS : s_view;
     lv_buttonmatrix_set_button_ctrl(s_tabs, tab, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_obj_update_layout(s_tabs);
+    sync_ring();
 }
 
 static void save_view(void)
@@ -310,8 +328,7 @@ void library_set_books(void)
         lv_obj_set_style_pad_row(btn, 2, 0);
         lv_obj_t *n = lv_label_create(btn);
         lv_label_set_text(n, g_authors[a].name);
-        lv_label_set_long_mode(n, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(n, lv_pct(100));
+        ui_one_line(n, &lv_font_montserrat_16);
         lv_obj_set_style_text_color(n, COLOR_TEXT, 0);
         lv_obj_t *c = lv_label_create(btn);
         lv_label_set_text(c, count);
@@ -339,3 +356,29 @@ void library_refresh(void)
     }
 }
 
+
+#ifdef UI_CAPTURE
+void library_debug_view(int view)
+{
+    s_view = (view_t)view;
+    apply_view();
+}
+
+void library_debug_step(int delta)
+{
+    carousel_step(s_carousel, delta);
+}
+
+// Shows the A-Z ring mid-drag, as if the user were scrubbing.
+void library_debug_scrub(int value, bool active)
+{
+    s_scrubbing = active;
+    lv_arc_set_value(s_ring, value);
+    if (active) {
+        lv_obj_remove_flag(s_bubble, LV_OBJ_FLAG_HIDDEN);
+        scrub_to(value);
+    } else {
+        lv_obj_add_flag(s_bubble, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+#endif
