@@ -69,19 +69,31 @@ static esp_http_client_handle_t new_client(const char *path, esp_http_client_met
 }
 
 // Performs a request and returns the body (NUL-terminated, PSRAM) in *out and its length in *out_len.
-// Returns HTTP status or -1.
+// With `keep`, the connection is reused across calls (skipping a multi-second TLS handshake each
+// time); *keep must only be used from one task. Returns HTTP status or -1.
 static int request_len(esp_http_client_method_t method, const char *path, const char *body, char **out,
-                       size_t *out_len)
+                       size_t *out_len, esp_http_client_handle_t *keep)
 {
     if (out) *out = NULL;
     if (out_len) *out_len = 0;
-    esp_http_client_handle_t c = new_client(path, method);
-    if (!c) return -1;
+    const bool reused = keep && *keep;
+    esp_http_client_handle_t c;
+    if (reused) {
+        char url[256];
+        snprintf(url, sizeof(url), "https://%s%s", ABS_SERVER, path);
+        c = *keep;
+        esp_http_client_set_url(c, url);
+        esp_http_client_set_method(c, method);
+    } else {
+        c = new_client(path, method);
+        if (!c) return -1;
+    }
     int body_len = body ? strlen(body) : 0;
     if (body) {
         esp_http_client_set_header(c, "Content-Type", "application/json");
     }
     int status = -1;
+    bool complete = false;
     esp_err_t err = esp_http_client_open(c, body_len);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "%s: connect failed: %s", path, esp_err_to_name(err));
@@ -91,7 +103,9 @@ static int request_len(esp_http_client_method_t method, const char *path, const 
         ESP_LOGE(TAG, "%s: write failed", path);
         goto done;
     }
-    esp_http_client_fetch_headers(c);
+    if (esp_http_client_fetch_headers(c) < 0) {
+        goto done;
+    }
     status = esp_http_client_get_status_code(c);
 
     size_t cap = 16 * 1024, len = 0;
@@ -111,6 +125,7 @@ static int request_len(esp_http_client_method_t method, const char *path, const 
         if (n <= 0) break;
         len += n;
     }
+    complete = esp_http_client_is_complete_data_received(c);
     if (buf) {
         buf[len] = 0;
         if (out_len) *out_len = len;
@@ -123,13 +138,22 @@ static int request_len(esp_http_client_method_t method, const char *path, const 
         ESP_LOGW(TAG, "%s %s -> %d", method == HTTP_METHOD_GET ? "GET" : "POST", path, status);
     }
 done:
+    if (keep && status > 0 && complete) {
+        *keep = c;
+        return status;
+    }
     esp_http_client_cleanup(c);
+    if (keep) *keep = NULL;
+    if (reused && status < 0) {
+        // The server probably dropped the idle connection; try once on a fresh one.
+        return request_len(method, path, body, out, out_len, keep);
+    }
     return status;
 }
 
 static int request(esp_http_client_method_t method, const char *path, const char *body, char **out)
 {
-    return request_len(method, path, body, out, NULL);
+    return request_len(method, path, body, out, NULL, NULL);
 }
 
 static const char *json_str(const cJSON *obj, const char *key)
@@ -376,7 +400,9 @@ esp_err_t abs_get_cover(const char *item_id, int width, uint8_t **out, size_t *o
     // The server resizes and re-encodes, so this is a small baseline JPEG.
     snprintf(path, sizeof(path), "/api/items/%s/cover?width=%d&format=jpeg", item_id, width);
     char *body = NULL;
-    if (request_len(HTTP_METHOD_GET, path, NULL, &body, out_len) != 200 || *out_len == 0) {
+    // Only the cover loader task calls this, so it can own a persistent connection.
+    static esp_http_client_handle_t conn;
+    if (request_len(HTTP_METHOD_GET, path, NULL, &body, out_len, &conn) != 200 || *out_len == 0) {
         free(body);
         return ESP_FAIL;
     }

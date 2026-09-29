@@ -46,6 +46,7 @@ esp_err_t abs_sync_session(const char *session_id, double current_time, double t
 esp_err_t abs_close_session(const char *session_id, double current_time, double time_listening);
 
 // Downloads the item's cover as a JPEG scaled to `width` px wide. Caller frees *out.
+// Keeps its connection open between calls; call from a single task only.
 esp_err_t abs_get_cover(const char *item_id, int width, uint8_t **out, size_t *out_len);
 
 // Opens a streaming GET for an HLS segment of the session. Returns the HTTP status (or <0 on error).
