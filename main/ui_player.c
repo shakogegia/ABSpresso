@@ -221,42 +221,44 @@ void playing_build(lv_obj_t *page)
     // Only the ring itself should grab touches, not the whole square it sits in.
     lv_obj_add_flag(s_arc, LV_OBJ_FLAG_ADV_HITTEST);
 
-    s_title = ui_label(page, &lv_font_montserrat_20, COLOR_TEXT, 250);
+    // Everything tappable stays inside radius ~150 so it never sits under the ring (ui_priv.h).
+    s_title = ui_label(page, &lv_font_montserrat_20, COLOR_TEXT, 230);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -88);
+    lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -90);
 
-    s_chapter = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 240);
-    lv_label_set_long_mode(s_chapter, LV_LABEL_LONG_DOT);
-    lv_obj_align(s_chapter, LV_ALIGN_CENTER, 0, -62);
+    s_chapter = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 230);
+    lv_label_set_long_mode(s_chapter, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_align(s_chapter, LV_ALIGN_CENTER, 0, -67);
 
-    s_state = ui_label(page, &lv_font_montserrat_14, COLOR_ACCENT, 260);
-    lv_obj_align(s_state, LV_ALIGN_CENTER, 0, -40);
+    s_state = ui_label(page, &lv_font_montserrat_14, COLOR_ACCENT, 240);
+    lv_label_set_long_mode(s_state, LV_LABEL_LONG_DOT);
+    lv_obj_align(s_state, LV_ALIGN_CENTER, 0, -48);
 
-    lv_obj_t *play = ui_round_button(page, 96, LV_SYMBOL_PLAY, &lv_font_montserrat_40, on_toggle, NULL);
+    lv_obj_t *play = ui_round_button(page, 80, LV_SYMBOL_PLAY, &lv_font_montserrat_40, on_toggle, NULL);
     lv_obj_set_style_bg_color(play, COLOR_ACCENT, 0);
     lv_obj_set_style_bg_color(play, lv_color_hex(0xC07818), LV_STATE_PRESSED);
     s_play_label = lv_obj_get_child(play, 0);
     lv_obj_set_style_text_color(s_play_label, lv_color_black(), 0);
-    lv_obj_align(play, LV_ALIGN_CENTER, 0, 12);
+    lv_obj_align(play, LV_ALIGN_CENTER, 0, 4);
 
-    lv_obj_t *b30 = ui_round_button(page, 64, "-30", &lv_font_montserrat_20, on_back30, NULL);
-    lv_obj_align(b30, LV_ALIGN_CENTER, -100, 12);
-    lv_obj_t *f30 = ui_round_button(page, 64, "+30", &lv_font_montserrat_20, on_fwd30, NULL);
-    lv_obj_align(f30, LV_ALIGN_CENTER, 100, 12);
+    lv_obj_t *b30 = ui_round_button(page, 60, "-30", &lv_font_montserrat_20, on_back30, NULL);
+    lv_obj_align(b30, LV_ALIGN_CENTER, -94, 4);
+    lv_obj_t *f30 = ui_round_button(page, 60, "+30", &lv_font_montserrat_20, on_fwd30, NULL);
+    lv_obj_align(f30, LV_ALIGN_CENTER, 94, 4);
 
-    s_time = ui_label(page, &lv_font_montserrat_16, COLOR_TEXT, 220);
-    lv_obj_align(s_time, LV_ALIGN_CENTER, 0, 76);
-    s_remaining = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 240);
-    lv_obj_align(s_remaining, LV_ALIGN_CENTER, 0, 98);
+    s_time = ui_label(page, &lv_font_montserrat_16, COLOR_TEXT, 200);
+    lv_obj_align(s_time, LV_ALIGN_CENTER, 0, 58);
+    s_remaining = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 220);
+    lv_obj_align(s_remaining, LV_ALIGN_CENTER, 0, 79);
 
     static const struct { const char *sym; lv_event_cb_t cb; intptr_t arg; int x; } row[] = {
-        {LV_SYMBOL_PREV, on_prev_ch, 0, -84},
-        {LV_SYMBOL_VOLUME_MID, on_volume, -10, -28},
-        {LV_SYMBOL_VOLUME_MAX, on_volume, 10, 28},
-        {LV_SYMBOL_NEXT, on_next_ch, 0, 84},
+        {LV_SYMBOL_PREV, on_prev_ch, 0, -66},
+        {LV_SYMBOL_VOLUME_MID, on_volume, -10, -22},
+        {LV_SYMBOL_VOLUME_MAX, on_volume, 10, 22},
+        {LV_SYMBOL_NEXT, on_next_ch, 0, 66},
     };
     for (int i = 0; i < 4; i++) {
-        lv_obj_t *b = ui_round_button(page, 44, row[i].sym, &lv_font_montserrat_16, row[i].cb, (void *)row[i].arg);
-        lv_obj_align(b, LV_ALIGN_CENTER, row[i].x, 134);
+        lv_obj_t *b = ui_round_button(page, 38, row[i].sym, &lv_font_montserrat_16, row[i].cb, (void *)row[i].arg);
+        lv_obj_align(b, LV_ALIGN_CENTER, row[i].x, 114);
     }
 }

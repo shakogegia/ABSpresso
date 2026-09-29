@@ -6,7 +6,7 @@
 #include "ui_priv.h"
 
 #define CARD_SIZE    COVER_THUMB_SIZE
-#define CARD_SPACING 185
+#define CARD_SPACING (CARD_SIZE + 30)
 
 typedef struct {
     lv_obj_t *root, *img, *placeholder;
@@ -15,13 +15,12 @@ typedef struct {
 } card_t;
 
 struct carousel {
-    lv_obj_t *root, *track, *title, *sub, *count;
+    lv_obj_t *root, *track, *title, *sub;
     card_t cards[3];  // previous, current, next
     const int *idx;
     int n;
     int pos;
     bool animating;
-    bool show_position;
 };
 
 static const abs_book_t *book_at(const carousel_t *c, int pos)
@@ -53,7 +52,6 @@ static void bind(carousel_t *c)
     if (!b) {
         lv_label_set_text(c->title, "");
         lv_label_set_text(c->sub, "");
-        lv_label_set_text(c->count, "");
         return;
     }
     char buf[160];
@@ -61,8 +59,6 @@ static void bind(carousel_t *c)
     ui_book_subtitle(b, buf, sizeof(buf));
     lv_label_set_text(c->sub, buf);
     lv_obj_set_style_text_color(c->sub, ui_book_in_progress(b) ? COLOR_ACCENT : COLOR_MUTED, 0);
-    snprintf(buf, sizeof(buf), "%d / %d", c->pos + 1, c->n);
-    lv_label_set_text(c->count, buf);
 }
 
 void carousel_refresh(carousel_t *c)
@@ -144,20 +140,20 @@ static void on_card_clicked(lv_event_t *e)
     }
 }
 
-carousel_t *carousel_create(lv_obj_t *parent, int y)
+carousel_t *carousel_create(lv_obj_t *parent, const carousel_cfg_t *cfg)
 {
     carousel_t *c = calloc(1, sizeof(*c));
-    c->show_position = true;
 
+    // The root clips the peeking neighbours to cfg->width.
     c->root = lv_obj_create(parent);
     lv_obj_remove_style_all(c->root);
-    lv_obj_set_size(c->root, 360, CARD_SIZE);
-    lv_obj_align(c->root, LV_ALIGN_TOP_MID, 0, y);
+    lv_obj_set_size(c->root, cfg->width, CARD_SIZE);
+    lv_obj_align(c->root, LV_ALIGN_TOP_MID, cfg->x, cfg->y);
     lv_obj_remove_flag(c->root, LV_OBJ_FLAG_SCROLLABLE);
 
     c->track = lv_obj_create(c->root);
     lv_obj_remove_style_all(c->track);
-    lv_obj_set_size(c->track, 360, CARD_SIZE);
+    lv_obj_set_size(c->track, cfg->width, CARD_SIZE);
     lv_obj_remove_flag(c->track, LV_OBJ_FLAG_SCROLLABLE);
 
     for (int k = 0; k < 3; k++) {
@@ -165,7 +161,7 @@ carousel_t *carousel_create(lv_obj_t *parent, int y)
         card->root = lv_obj_create(c->track);
         lv_obj_remove_style_all(card->root);
         lv_obj_set_size(card->root, CARD_SIZE, CARD_SIZE);
-        lv_obj_set_pos(card->root, 180 - CARD_SIZE / 2 + (k - 1) * CARD_SPACING, 0);
+        lv_obj_set_pos(card->root, cfg->width / 2 - CARD_SIZE / 2 + (k - 1) * CARD_SPACING, 0);
         lv_obj_set_style_bg_color(card->root, COLOR_CARD, 0);
         lv_obj_set_style_bg_opa(card->root, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(card->root, 10, 0);
@@ -189,14 +185,13 @@ carousel_t *carousel_create(lv_obj_t *parent, int y)
         }
     }
 
-    c->title = ui_label(parent, &lv_font_montserrat_16, COLOR_TEXT, 250);
-    lv_label_set_long_mode(c->title, LV_LABEL_LONG_DOT);
-    lv_obj_align(c->title, LV_ALIGN_TOP_MID, 0, y + CARD_SIZE + 8);
-    c->sub = ui_label(parent, &lv_font_montserrat_14, COLOR_MUTED, 250);
-    lv_label_set_long_mode(c->sub, LV_LABEL_LONG_DOT);
-    lv_obj_align(c->sub, LV_ALIGN_TOP_MID, 0, y + CARD_SIZE + 30);
-    c->count = ui_label(parent, &lv_font_montserrat_14, COLOR_MUTED, 120);
-    lv_obj_align(c->count, LV_ALIGN_TOP_MID, 0, y + CARD_SIZE + 50);
+    // Fixed widths so long text can't spill toward the screen edge; it scrolls instead.
+    c->title = ui_label(parent, &lv_font_montserrat_16, COLOR_TEXT, cfg->title_w);
+    lv_label_set_long_mode(c->title, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_align(c->title, LV_ALIGN_TOP_MID, cfg->x, cfg->y + CARD_SIZE + 8);
+    c->sub = ui_label(parent, &lv_font_montserrat_14, COLOR_MUTED, cfg->sub_w);
+    lv_label_set_long_mode(c->sub, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_align(c->sub, LV_ALIGN_TOP_MID, cfg->x, cfg->y + CARD_SIZE + 30);
 
     bind(c);
     return c;
@@ -225,18 +220,9 @@ int carousel_count(const carousel_t *c)
 
 void carousel_set_hidden(carousel_t *c, bool hidden)
 {
-    lv_obj_t *objs[] = {c->root, c->title, c->sub, c->count};
-    for (int i = 0; i < 4; i++) {
-        if (hidden || (objs[i] == c->count && !c->show_position)) {
-            lv_obj_add_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_remove_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
-        }
+    lv_obj_t *objs[] = {c->root, c->title, c->sub};
+    for (int i = 0; i < 3; i++) {
+        if (hidden) lv_obj_add_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_remove_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
     }
-}
-
-void carousel_show_position(carousel_t *c, bool show)
-{
-    c->show_position = show;
-    carousel_set_hidden(c, lv_obj_has_flag(c->root, LV_OBJ_FLAG_HIDDEN));
 }

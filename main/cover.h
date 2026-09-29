@@ -12,7 +12,7 @@ typedef enum {
     COVER_BACKDROP,  // full-screen player background, dimmed
 } cover_kind_t;
 
-#define COVER_THUMB_SIZE 160
+#define COVER_THUMB_SIZE 140
 
 void cover_init(void);
 

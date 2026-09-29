@@ -9,8 +9,16 @@
 
 typedef struct carousel carousel_t;
 
-// Cards are placed at `y` (relative to parent), with title/subtitle/position labels below.
-carousel_t *carousel_create(lv_obj_t *parent, int y);
+typedef struct {
+    int y;        // top of the cards, relative to the parent
+    int x;        // horizontal offset of the carousel's centre from the parent's centre
+    int width;    // visible width; neighbouring cards are clipped to it
+    int title_w;  // widths of the title and author lines (they scroll when longer)
+    int sub_w;
+} carousel_cfg_t;
+
+// Cards with a title and author line below them.
+carousel_t *carousel_create(lv_obj_t *parent, const carousel_cfg_t *cfg);
 
 // `idx` indexes g_books and must stay valid until the next call.
 void carousel_set_items(carousel_t *c, const int *idx, int count, int pos);
@@ -22,5 +30,3 @@ int carousel_count(const carousel_t *c);
 // Pulls covers from the cache; call on every UI refresh while visible.
 void carousel_refresh(carousel_t *c);
 void carousel_set_hidden(carousel_t *c, bool hidden);
-// Shows/hides the "3 / 42" position label.
-void carousel_show_position(carousel_t *c, bool show);

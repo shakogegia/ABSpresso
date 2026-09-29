@@ -4,8 +4,8 @@
 #include "cover.h"
 #include "ui_priv.h"
 
-#define ROW_TITLE_Y  PAGE_TOP + 2
-#define CAROUSEL_Y   PAGE_TOP + 26
+#define ROW_TITLE_Y  PAGE_TOP
+#define CAROUSEL_Y   (PAGE_TOP + 22)
 
 typedef struct {
     const char *name;
@@ -125,11 +125,13 @@ void home_build(lv_obj_t *page)
     s_title = ui_label(s_group, &lv_font_montserrat_16, COLOR_ACCENT, 260);
     lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, ROW_TITLE_Y);
 
-    s_carousel = carousel_create(s_group, CAROUSEL_Y);
-    carousel_show_position(s_carousel, false);
+    // No ring on Home, so the carousel can use the full width.
+    const carousel_cfg_t cfg = {.y = CAROUSEL_Y, .x = 0, .width = 360, .title_w = 240, .sub_w = 230};
+    s_carousel = carousel_create(s_group, &cfg);
 
-    s_hint = ui_label(s_group, &lv_font_montserrat_14, COLOR_MUTED, 220);
-    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, CAROUSEL_Y + COVER_THUMB_SIZE + 58);
+    s_hint = ui_label(s_group, &lv_font_montserrat_14, COLOR_MUTED, 200);
+    lv_label_set_long_mode(s_hint, LV_LABEL_LONG_DOT);
+    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, CAROUSEL_Y + COVER_THUMB_SIZE + 54);
 
     // Row indicator dots down the right edge.
     for (int i = 0; i < ROW_COUNT; i++) {

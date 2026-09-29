@@ -33,9 +33,10 @@ static void set_hidden(lv_obj_t *o, bool hidden)
 
 static lv_obj_t *make_list(lv_obj_t *page)
 {
+    // Sized and nudged left to stay clear of the A-Z ring on the right (see ui_priv.h).
     lv_obj_t *l = lv_list_create(page);
-    lv_obj_set_size(l, 256, 222);
-    lv_obj_align(l, LV_ALIGN_TOP_MID, 0, VIEW_Y);
+    lv_obj_set_size(l, 236, 172);
+    lv_obj_align(l, LV_ALIGN_TOP_MID, -8, VIEW_Y);
     lv_obj_set_style_bg_opa(l, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(l, 0, 0);
     lv_obj_set_style_pad_all(l, 0, 0);
@@ -247,7 +248,8 @@ void library_build(lv_obj_t *page)
     lv_obj_add_event_cb(s_authors, on_list_scroll, LV_EVENT_SCROLL, NULL);
     lv_obj_add_event_cb(s_author_books, on_list_scroll, LV_EVENT_SCROLL, NULL);
 
-    s_carousel = carousel_create(page, VIEW_Y + 6);
+    const carousel_cfg_t cfg = {.y = VIEW_Y + 2, .x = -12, .width = 280, .title_w = 230, .sub_w = 200};
+    s_carousel = carousel_create(page, &cfg);
 
     // Right-edge ring segment from 1 o'clock to 5 o'clock: top = A, bottom = Z.
     s_ring = lv_arc_create(page);

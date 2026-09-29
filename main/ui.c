@@ -191,8 +191,8 @@ void ui_init(void)
     // Dock last, so it is above the pages.
     static const char *icons[PAGE_COUNT] = {LV_SYMBOL_HOME, LV_SYMBOL_LIST, LV_SYMBOL_AUDIO};
     for (int i = 0; i < PAGE_COUNT; i++) {
-        s_dock[i] = ui_round_button(s_scr, 40, icons[i], &lv_font_montserrat_16, on_dock, (void *)(intptr_t)i);
-        lv_obj_align(s_dock[i], LV_ALIGN_TOP_MID, (i - 1) * 54, 12);
+        s_dock[i] = ui_round_button(s_scr, 38, icons[i], &lv_font_montserrat_16, on_dock, (void *)(intptr_t)i);
+        lv_obj_align(s_dock[i], LV_ALIGN_TOP_MID, (i - 1) * 46, DOCK_Y);
         lv_obj_set_style_border_color(s_dock[i], COLOR_ACCENT, 0);
     }
 

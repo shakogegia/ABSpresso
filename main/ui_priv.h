@@ -13,8 +13,13 @@
 #define COLOR_TEXT   lv_color_hex(0xF2F2F2)
 #define COLOR_MUTED  lv_color_hex(0x8C96A0)
 
-// Pages sit below the dock, which occupies roughly y 14..50 at the top of the round screen.
-#define PAGE_TOP 58
+// Touch layout rule: rings (Now Playing's progress ring, Library's A-Z ring) claim every touch at
+// radius >= ~166 px from the screen centre. Keep tappable things' bounding boxes inside radius
+// 160, and round controls visually inside ~150, so they never sit under a ring.
+
+// The dock spans y 39..77; pages start below it.
+#define DOCK_Y   39
+#define PAGE_TOP 84
 
 typedef enum {
     PAGE_HOME,
