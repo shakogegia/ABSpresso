@@ -249,7 +249,19 @@ static esp_err_t touch_init(esp_lcd_touch_handle_t *out_tp)
         .rst_gpio_num = GPIO_NUM_NC,
         .int_gpio_num = PIN_TOUCH_INT,
     };
-    return esp_lcd_touch_new_i2c_cst816s(io, &tp_cfg, out_tp);
+    ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_cst816s(io, &tp_cfg, out_tp), TAG, "touch");
+
+    // The controller powers up with MotionMask = 0, which stops coordinate updates once it has
+    // recognised a swipe, so LVGL never sees enough movement to detect a gesture. Enable
+    // continuous up/down (bit 1) and left/right (bit 2) tracking.
+    uint8_t motion_mask = 0x06, readback = 0;
+    esp_lcd_panel_io_tx_param(io, 0xEC, &motion_mask, 1);
+    if (esp_lcd_panel_io_rx_param(io, 0xEC, &readback, 1) != ESP_OK || readback != motion_mask) {
+        ESP_LOGW(TAG, "couldn't set touch MotionMask (reads %02x); swipes may be unreliable", readback);
+    } else {
+        ESP_LOGI(TAG, "touch MotionMask set to %02x", readback);
+    }
+    return ESP_OK;
 }
 
 esp_err_t board_display_init(lv_display_t **out_disp)

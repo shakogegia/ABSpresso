@@ -71,6 +71,9 @@ static void show_row(int r, int dir)
         hint[0] = 0;
     }
     lv_label_set_text(s_hint, hint);
+    lv_obj_t *pill = lv_obj_get_parent(s_hint);
+    if (hint[0]) lv_obj_remove_flag(pill, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(pill, LV_OBJ_FLAG_HIDDEN);
     for (int i = 0; i < ROW_COUNT; i++) {
         lv_obj_set_style_bg_color(s_dots[i], i == r ? COLOR_ACCENT : COLOR_CARD, 0);
         if (row_has_books(i)) lv_obj_remove_flag(s_dots[i], LV_OBJ_FLAG_HIDDEN);
@@ -110,6 +113,13 @@ static void on_gesture(lv_event_t *e)
     }
 }
 
+static void on_hint_clicked(lv_event_t *e)
+{
+    int r = next_row(s_row, 1);
+    if (r >= 0) show_row(r, 1);
+    else if ((r = next_row(s_row, -1)) >= 0) show_row(r, -1);
+}
+
 void home_build(lv_obj_t *page)
 {
     s_page = page;
@@ -129,9 +139,19 @@ void home_build(lv_obj_t *page)
     const carousel_cfg_t cfg = {.y = CAROUSEL_Y, .x = 0, .width = 360, .title_w = 240, .sub_w = 230};
     s_carousel = carousel_create(s_group, &cfg);
 
-    s_hint = ui_label(s_group, &lv_font_montserrat_14, COLOR_MUTED, 200);
-    lv_label_set_long_mode(s_hint, LV_LABEL_LONG_DOT);
-    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, CAROUSEL_Y + COVER_THUMB_SIZE + 54);
+    // Names the neighbouring shelf; tapping it moves there too (swiping isn't discoverable).
+    lv_obj_t *pill = lv_button_create(s_group);
+    lv_obj_set_size(pill, LV_SIZE_CONTENT, 28);
+    lv_obj_set_style_radius(pill, 14, 0);
+    lv_obj_set_style_bg_color(pill, COLOR_CARD, 0);
+    lv_obj_set_style_bg_color(pill, COLOR_ACCENT, LV_STATE_PRESSED);
+    lv_obj_set_style_shadow_width(pill, 0, 0);
+    lv_obj_set_style_pad_hor(pill, 14, 0);
+    lv_obj_set_style_pad_ver(pill, 0, 0);
+    lv_obj_align(pill, LV_ALIGN_TOP_MID, 0, CAROUSEL_Y + COVER_THUMB_SIZE + 54);
+    lv_obj_add_event_cb(pill, on_hint_clicked, LV_EVENT_CLICKED, NULL);
+    s_hint = ui_label(pill, &lv_font_montserrat_14, COLOR_MUTED, 0);
+    lv_obj_center(s_hint);
 
     // Row indicator dots down the right edge.
     for (int i = 0; i < ROW_COUNT; i++) {
