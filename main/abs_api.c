@@ -68,10 +68,13 @@ static esp_http_client_handle_t new_client(const char *path, esp_http_client_met
     return c;
 }
 
-// Performs a request and returns the body (NUL-terminated, PSRAM) in *out. Returns HTTP status or -1.
-static int request(esp_http_client_method_t method, const char *path, const char *body, char **out)
+// Performs a request and returns the body (NUL-terminated, PSRAM) in *out and its length in *out_len.
+// Returns HTTP status or -1.
+static int request_len(esp_http_client_method_t method, const char *path, const char *body, char **out,
+                       size_t *out_len)
 {
     if (out) *out = NULL;
+    if (out_len) *out_len = 0;
     esp_http_client_handle_t c = new_client(path, method);
     if (!c) return -1;
     int body_len = body ? strlen(body) : 0;
@@ -110,6 +113,7 @@ static int request(esp_http_client_method_t method, const char *path, const char
     }
     if (buf) {
         buf[len] = 0;
+        if (out_len) *out_len = len;
         if (out) *out = buf; else free(buf);
     } else {
         ESP_LOGE(TAG, "%s: out of memory reading response", path);
@@ -121,6 +125,11 @@ static int request(esp_http_client_method_t method, const char *path, const char
 done:
     esp_http_client_cleanup(c);
     return status;
+}
+
+static int request(esp_http_client_method_t method, const char *path, const char *body, char **out)
+{
+    return request_len(method, path, body, out, NULL);
 }
 
 static const char *json_str(const cJSON *obj, const char *key)
@@ -359,4 +368,18 @@ void abs_stream_end(bool keep_alive)
         esp_http_client_cleanup(s_stream);
         s_stream = NULL;
     }
+}
+
+esp_err_t abs_get_cover(const char *item_id, int width, uint8_t **out, size_t *out_len)
+{
+    char path[128];
+    // The server resizes and re-encodes, so this is a small baseline JPEG.
+    snprintf(path, sizeof(path), "/api/items/%s/cover?width=%d&format=jpeg", item_id, width);
+    char *body = NULL;
+    if (request_len(HTTP_METHOD_GET, path, NULL, &body, out_len) != 200 || *out_len == 0) {
+        free(body);
+        return ESP_FAIL;
+    }
+    *out = (uint8_t *)body;
+    return ESP_OK;
 }

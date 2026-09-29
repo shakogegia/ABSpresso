@@ -4,6 +4,7 @@
 #include "nvs_flash.h"
 #include "abs_api.h"
 #include "board.h"
+#include "cover.h"
 #include "player.h"
 #include "ui.h"
 #include "wifi.h"
@@ -47,6 +48,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(board_audio_init());
     abs_api_init();
+    cover_init();
     player_init();
     wifi_start();
 

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "lvgl.h"
+#include "cover.h"
 #include "player.h"
 
 #define COLOR_BG     lv_color_hex(0x101418)
@@ -20,8 +21,9 @@ static int s_book_count;
 static volatile bool s_refresh_requested;
 
 static lv_obj_t *s_lib_scr, *s_lib_list, *s_lib_msg, *s_lib_now_btn;
-static lv_obj_t *s_play_scr, *s_arc, *s_title, *s_chapter, *s_state, *s_play_label, *s_time, *s_remaining;
+static lv_obj_t *s_play_scr, *s_cover_img, *s_arc, *s_title, *s_chapter, *s_state, *s_play_label, *s_time, *s_remaining;
 static bool s_arc_dragging;
+static lv_image_dsc_t *s_cover;  // currently shown on s_cover_img
 static uint32_t s_state_override_until;
 
 /* ---------- helpers ---------- */
@@ -80,6 +82,8 @@ static void on_book_clicked(lv_event_t *e)
     int i = (int)(intptr_t)lv_event_get_user_data(e);
     if (i < 0 || i >= s_book_count) return;
     player_open(&s_books[i]);
+    cover_request(s_books[i].id);
+    lv_obj_add_flag(s_cover_img, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(s_title, s_books[i].title);
     lv_label_set_text(s_chapter, s_books[i].author);
     lv_label_set_text(s_time, "");
@@ -148,6 +152,18 @@ static void on_arc_event(lv_event_t *e)
 
 static void refresh_timer(lv_timer_t *t)
 {
+    lv_image_dsc_t *cover = cover_take();
+    if (cover) {
+        lv_image_dsc_t *old = s_cover;
+        lv_image_set_src(s_cover_img, cover);
+        lv_obj_remove_flag(s_cover_img, LV_OBJ_FLAG_HIDDEN);
+        s_cover = cover;
+        if (old) {
+            lv_image_cache_drop(old);
+            cover_free(old);
+        }
+    }
+
     player_status_t st;
     player_get_status(&st);
 
@@ -247,6 +263,11 @@ static void build_player(void)
     s_play_scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_play_scr, COLOR_BG, 0);
     lv_obj_remove_flag(s_play_scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Cover art fills the round screen behind everything else (pre-dimmed by the loader).
+    s_cover_img = lv_image_create(s_play_scr);
+    lv_obj_center(s_cover_img);
+    lv_obj_add_flag(s_cover_img, LV_OBJ_FLAG_HIDDEN);
 
     s_arc = lv_arc_create(s_play_scr);
     lv_obj_set_size(s_arc, 348, 348);
