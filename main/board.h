@@ -12,6 +12,8 @@ esp_err_t board_display_init(lv_display_t **out_disp);
 
 // 0-100
 void board_set_backlight(int percent);
+// Turns the picture (and touch) upside down, e.g. for a different mounting.
+void board_set_rotated(bool rotated);
 // Panel sleep (display off + sleep-in) and wake. The backlight is separate.
 void board_display_power(bool on);
 // Reads the touch controller directly (for waking while LVGL is paused).

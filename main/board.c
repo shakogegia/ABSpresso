@@ -55,6 +55,7 @@ static i2c_master_bus_handle_t s_i2c_bus;
 static esp_lcd_panel_io_handle_t s_panel_io, s_touch_io;
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_tp;
+static bool s_rotated;
 static esp_io_expander_handle_t s_expander;
 static i2s_chan_handle_t s_i2s_tx;
 static bool s_i2s_enabled;
@@ -284,8 +285,9 @@ static bool touch_poll(lv_point_t *at)
         return false;
     }
     if (at) {
-        at->x = pt.x;
-        at->y = pt.y;
+        // Rotated 180 degrees: the panel mirrors both axes in hardware; touch has to match.
+        at->x = s_rotated ? BOARD_LCD_H_RES - 1 - pt.x : pt.x;
+        at->y = s_rotated ? BOARD_LCD_V_RES - 1 - pt.y : pt.y;
     }
     return true;
 }
@@ -325,6 +327,12 @@ void board_display_power(bool on)
         esp_lcd_panel_disp_on_off(s_panel, false);
         lcd_cmd(0x10);  // sleep in
     }
+}
+
+void board_set_rotated(bool rotated)
+{
+    s_rotated = rotated;
+    if (s_panel) esp_lcd_panel_mirror(s_panel, rotated, rotated);
 }
 
 void board_prepare_deep_sleep(void)

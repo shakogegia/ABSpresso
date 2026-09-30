@@ -6,6 +6,8 @@
 #include "abs_api.h"
 #include "download.h"
 #include "esp_wifi.h"
+#include "board.h"
+#include "nvs.h"
 #include "power.h"
 #include "storage.h"
 #include "ui.h"
@@ -14,11 +16,27 @@
 
 enum {
     ROW_SERVER, ROW_LIBRARY, ROW_CONTENTS, ROW_UPDATED, ROW_WIFI, ROW_SD,
-    ROW_BRIGHT, ROW_SCREEN, ROW_SLEEP,  // tap to cycle
+    ROW_BRIGHT, ROW_SCREEN, ROW_SLEEP, ROW_ROTATE,  // tap to cycle
     ROW_COUNT
 };
 static const char *const s_keys[ROW_COUNT] = {"Server", "Library", "Contents", "Updated", "Wi-Fi", "SD card",
-                                              "Brightness", "Screen off", "Sleep"};
+                                              "Brightness", "Screen off", "Sleep", "Rotate 180\xc2\xb0"};
+
+static bool s_rotated = true;  // default: upside down (how this device is mounted)
+
+static void apply_rotation(bool rotated, bool save)
+{
+    s_rotated = rotated;
+    board_set_rotated(rotated);
+    lv_obj_invalidate(lv_screen_active());
+    if (!save) return;
+    nvs_handle_t h;
+    if (nvs_open("ui", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "rot180", rotated);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
 
 // Choices the power rows cycle through.
 static const int BRIGHTNESS[] = {20, 40, 60, 80, 100};
@@ -41,6 +59,10 @@ static void on_power_row(lv_event_t *e)
     case ROW_BRIGHT: c.brightness = next_choice(BRIGHTNESS, 5, c.brightness); break;
     case ROW_SCREEN: c.screen_off_s = next_choice(SCREEN_OFF_S, 5, c.screen_off_s); break;
     case ROW_SLEEP:  c.sleep_min = next_choice(SLEEP_MIN, 4, c.sleep_min); break;
+    case ROW_ROTATE:
+        apply_rotation(!s_rotated, true);
+        settings_refresh();
+        return;
     }
     power_set_config(&c);
     settings_refresh();
@@ -197,10 +219,19 @@ void settings_refresh(void)
     if (!pc.sleep_min) snprintf(buf, sizeof(buf), "Never  " LV_SYMBOL_RIGHT);
     else snprintf(buf, sizeof(buf), "after %d min  " LV_SYMBOL_RIGHT, pc.sleep_min);
     set_value(ROW_SLEEP, buf);
+    set_value(ROW_ROTATE, s_rotated ? "On  " LV_SYMBOL_RIGHT : "Off  " LV_SYMBOL_RIGHT);
 }
 
 void settings_build(lv_obj_t *parent)
 {
+    uint8_t rot = 1;
+    nvs_handle_t h;
+    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, "rot180", &rot);
+        nvs_close(h);
+    }
+    apply_rotation(rot, false);
+
     lv_obj_t *table = lv_obj_create(parent);
     lv_obj_remove_style_all(table);
     lv_obj_set_size(table, lv_pct(100), LV_SIZE_CONTENT);
