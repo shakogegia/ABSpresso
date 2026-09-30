@@ -20,6 +20,7 @@ static const char *TAG = "abs";
 
 static char s_auth[600];
 static char s_device_id[24];
+static char s_library_name[64];
 static char s_device_id_dl[28];
 struct abs_stream {
     esp_http_client_handle_t client;
@@ -248,6 +249,7 @@ esp_err_t abs_get_books(abs_book_t **out_books, int *out_count, char **items_jso
         const char *type = json_str(lib, "mediaType");
         if (type && strcmp(type, "book") == 0) {
             strlcpy(lib_id, json_str(lib, "id"), sizeof(lib_id));
+            strlcpy(s_library_name, json_str(lib, "name") ?: "", sizeof(s_library_name));
             break;
         }
     }
@@ -269,6 +271,21 @@ esp_err_t abs_get_books(abs_book_t **out_books, int *out_count, char **items_jso
     esp_err_t err = abs_parse_books(*items_json, *me_json, out_books, out_count);
     ESP_LOGI(TAG, "loaded %d books", *out_count);
     return err;
+}
+
+const char *abs_library_name(void)
+{
+    return s_library_name;
+}
+
+void abs_set_library_name(const char *name)
+{
+    strlcpy(s_library_name, name ? name : "", sizeof(s_library_name));
+}
+
+const char *abs_server(void)
+{
+    return ABS_SERVER;
 }
 
 esp_err_t abs_patch_progress(const char *item_id, double current_time, double duration, bool finished)

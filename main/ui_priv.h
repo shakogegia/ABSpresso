@@ -21,6 +21,11 @@
 #define DOCK_Y   39
 #define PAGE_TOP 84
 
+// Shared page layout, so Home and Library line up: covers (and lists) in the middle, the switcher
+// pill at the bottom.
+#define PAGE_CAROUSEL_Y (PAGE_TOP + 2)
+#define PAGE_SWITCHER_Y (PAGE_TOP + 196)
+
 typedef enum {
     PAGE_HOME,
     PAGE_LIBRARY,
@@ -72,6 +77,10 @@ void ui_sheet_hide(void);
 bool ui_sheet_visible(void);
 // Index into g_books of the book with this id, or -1.
 int ui_find_book(const char *item_id);
+
+/* settings view inside the Library page (ui_settings.c) */
+void settings_build(lv_obj_t *parent);
+void settings_refresh(void);
 
 /* pages */
 void home_build(lv_obj_t *page);

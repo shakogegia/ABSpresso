@@ -21,8 +21,9 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
 - **Home:** "Continue Listening", "Recently Added" and "Downloaded" shelves of cover art. Swipe
   left/right on the covers to browse; switch shelf with the arrows (or a swipe) on the shelf name
   at the bottom, where dots show which shelf you're on.
-- **Library:** every book as an A-Z list, a cover carousel, or grouped by author, with an A-Z
-  scrub ring on the right edge.
+- **Library:** Covers, Books (A-Z list) and Authors, switched with the same bottom pill as Home,
+  with an A-Z scrub ring on the right edge. A Settings view there shows library, Wi-Fi and SD
+  card info and refreshes the library.
 - **Now Playing:** cover art backdrop, a chapter-progress ring you can drag to scrub, ±30 s,
   previous/next chapter and volume. When nothing is loaded it offers your most recent book to
   resume.

@@ -135,17 +135,20 @@ static void capture_task(void *arg)
     shot("home_recent", 0);
 
     locked(show_page, PAGE_LIBRARY);
-    locked(lib_view, 0);
+    locked(lib_view, 1);  // Books
     advance(200);
     shot("library_list", 0);
     locked(scrub_on, 430);
     advance(200);
     shot("library_scrub", 0);
     locked(scrub_off, 430);
-    locked(lib_view, 2);
+    locked(lib_view, 2);  // Authors
     advance(200);
     shot("library_authors", 0);
-    locked(lib_view, 1);
+    locked(lib_view, 3);  // Settings
+    advance(200);
+    shot("library_settings", 0);
+    locked(lib_view, 0);  // Covers
     wait_real(4000);
     shot("library_covers", 0);
 
@@ -155,7 +158,7 @@ static void capture_task(void *arg)
 
     // GIF: browsing the cover carousel.
     locked(show_page, PAGE_LIBRARY);
-    locked(lib_view, 1);
+    locked(lib_view, 0);
     wait_real(1500);
     s_frame = 0;
     frame("carousel", 900);

@@ -24,15 +24,17 @@ static void show_message(const char *msg)
 
 #define CACHE_ITEMS STORAGE_ROOT "/items.json"
 #define CACHE_ME    STORAGE_ROOT "/me.json"
+#define CACHE_NAME  STORAGE_ROOT "/library.txt"
 #define RETRY_US    (30 * 1000000LL)
 
 static abs_book_t *s_books;
 static int s_count;
 
-static void show_books(abs_book_t *fresh, int n)
+static void show_books(abs_book_t *fresh, int n, bool cached)
 {
     lvgl_port_lock(0);
     ui_set_books(fresh, n);
+    ui_set_source(cached);
     lvgl_port_unlock();
     abs_free_books(s_books, s_count);
     s_books = fresh;
@@ -55,8 +57,11 @@ static bool load_cached(void)
         return false;
     }
     download_sync_progress(fresh, n, false);
+    char *name = storage_read_file(CACHE_NAME, NULL);
+    abs_set_library_name(name);
+    free(name);
     ESP_LOGI("main", "showing %d books from the SD cache", n);
-    show_books(fresh, n);
+    show_books(fresh, n, true);
     return true;
 }
 
@@ -72,11 +77,12 @@ static bool load_network(bool quiet)
     if (storage_ready()) {
         storage_write_file(CACHE_ITEMS, items, strlen(items));
         storage_write_file(CACHE_ME, me, strlen(me));
+        storage_write_file(CACHE_NAME, abs_library_name(), strlen(abs_library_name()));
     }
     free(items);
     free(me);
     download_sync_progress(fresh, n, true);
-    show_books(fresh, n);
+    show_books(fresh, n, false);
     return true;
 }
 

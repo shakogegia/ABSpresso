@@ -24,6 +24,7 @@ author_t *g_authors;
 int g_author_count;
 
 static volatile bool s_refresh_requested;
+static bool s_from_cache;
 static uint32_t s_books_loaded_at;
 
 static lv_obj_t *s_scr, *s_msg;
@@ -406,6 +407,17 @@ void ui_set_books(const abs_book_t *books, int count)
     home_set_books();
     library_set_books();
     ui_show_message(count ? NULL : "No books found");
+}
+
+void ui_set_source(bool from_cache)
+{
+    s_from_cache = from_cache;
+}
+
+void ui_get_source(uint32_t *loaded_tick, bool *from_cache)
+{
+    *loaded_tick = s_books_loaded_at;
+    *from_cache = s_from_cache;
 }
 
 void ui_request_refresh(void)

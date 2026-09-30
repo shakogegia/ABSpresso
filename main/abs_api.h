@@ -40,6 +40,10 @@ void abs_api_init(void);
 // Books from the first book library, sorted A-Z by sort_title. Also returns the raw item and
 // user JSON (caller frees) so they can be cached and re-parsed offline.
 esp_err_t abs_get_books(abs_book_t **out_books, int *out_count, char **items_json, char **me_json);
+// Name of the library abs_get_books() read from (or one restored from cache), and the server host.
+const char *abs_library_name(void);
+void abs_set_library_name(const char *name);
+const char *abs_server(void);
 esp_err_t abs_parse_books(const char *items_json, const char *me_json, abs_book_t **out_books, int *out_count);
 void abs_free_books(abs_book_t *books, int count);
 
