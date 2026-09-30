@@ -18,8 +18,9 @@ Audiobookshelf is a self-hosted server for audiobooks. Its clients are phone and
 a tiny dedicated player (a round screen with a speaker, sitting on a desk or bedside table) is
 nicer for "just carry on with my book". This firmware turns an inexpensive dev board into that:
 
-- **Home:** "Continue Listening" and "Recently Added" shelves of cover art. Swipe left/right
-  within a shelf, up/down between shelves.
+- **Home:** "Continue Listening", "Recently Added" and "Downloaded" shelves of cover art. Swipe
+  left/right on the covers to browse; switch shelf with the arrows (or a swipe) on the shelf name
+  at the bottom, where dots show which shelf you're on.
 - **Library:** every book as an A-Z list, a cover carousel, or grouped by author, with an A-Z
   scrub ring on the right edge.
 - **Now Playing:** cover art backdrop, a chapter-progress ring you can drag to scrub, ±30 s,
