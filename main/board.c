@@ -2,6 +2,7 @@
 // Pin assignments and the alternate ST77916 init table come from Waveshare's demo.
 
 #include "board.h"
+#include "power.h"
 
 #include <string.h>
 
@@ -51,6 +52,9 @@ static const char *TAG = "board";
 #define PIN_I2S_DOUT 47
 
 static i2c_master_bus_handle_t s_i2c_bus;
+static esp_lcd_panel_io_handle_t s_panel_io, s_touch_io;
+static esp_lcd_panel_handle_t s_panel;
+static esp_lcd_touch_handle_t s_tp;
 static esp_io_expander_handle_t s_expander;
 static i2s_chan_handle_t s_i2s_tx;
 static bool s_i2s_enabled;
@@ -243,6 +247,7 @@ static esp_err_t touch_init(esp_lcd_touch_handle_t *out_tp)
     esp_lcd_panel_io_i2c_config_t io_cfg = ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG();
     io_cfg.scl_speed_hz = 400000;
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(s_i2c_bus, &io_cfg, &io), TAG, "touch IO");
+    s_touch_io = io;
     const esp_lcd_touch_config_t tp_cfg = {
         .x_max = BOARD_LCD_H_RES,
         .y_max = BOARD_LCD_V_RES,
@@ -271,18 +276,64 @@ static esp_err_t touch_init(esp_lcd_touch_handle_t *out_tp)
     return ESP_OK;
 }
 
-static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
+static bool touch_poll(lv_point_t *at)
 {
-    esp_lcd_touch_handle_t tp = lv_indev_get_user_data(indev);
     esp_lcd_touch_point_data_t pt;
     uint8_t n = 0;
-    if (esp_lcd_touch_read_data(tp) == ESP_OK && esp_lcd_touch_get_data(tp, &pt, &n, 1) == ESP_OK && n > 0) {
-        data->point.x = pt.x;
-        data->point.y = pt.y;
+    if (!s_tp || esp_lcd_touch_read_data(s_tp) != ESP_OK || esp_lcd_touch_get_data(s_tp, &pt, &n, 1) != ESP_OK || !n) {
+        return false;
+    }
+    if (at) {
+        at->x = pt.x;
+        at->y = pt.y;
+    }
+    return true;
+}
+
+static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    lv_point_t at;
+    const bool pressed = touch_poll(&at);
+    // The power manager sees every touch (to keep the screen awake) and may hold one back.
+    if (power_filter_touch(pressed)) {
+        data->point = at;
         data->state = LV_INDEV_STATE_PRESSED;
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
+}
+
+bool board_touch_pressed(void)
+{
+    return touch_poll(NULL);
+}
+
+// QSPI command framing for the ST77916: opcode 0x02, command in bits 8..15.
+static void lcd_cmd(uint8_t cmd)
+{
+    esp_lcd_panel_io_tx_param(s_panel_io, (0x02 << 24) | (cmd << 8), NULL, 0);
+}
+
+void board_display_power(bool on)
+{
+    if (!s_panel) return;
+    if (on) {
+        lcd_cmd(0x11);  // sleep out
+        vTaskDelay(pdMS_TO_TICKS(120));
+        esp_lcd_panel_disp_on_off(s_panel, true);
+    } else {
+        esp_lcd_panel_disp_on_off(s_panel, false);
+        lcd_cmd(0x10);  // sleep in
+    }
+}
+
+void board_prepare_deep_sleep(void)
+{
+    board_set_backlight(0);
+    board_display_power(false);
+    // Let the touch controller drop to its low-power scan; it still pulls INT low on a touch.
+    uint8_t auto_sleep = 0x00;
+    if (s_touch_io) esp_lcd_panel_io_tx_param(s_touch_io, 0xFE, &auto_sleep, 1);
 }
 
 esp_err_t board_display_init(lv_display_t **out_disp)
@@ -294,6 +345,8 @@ esp_err_t board_display_init(lv_display_t **out_disp)
     esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_handle_t panel = NULL;
     ESP_RETURN_ON_ERROR(lcd_init(&io, &panel), TAG, "LCD");
+    s_panel_io = io;
+    s_panel = panel;
 
     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     port_cfg.task_stack = 8192;
@@ -324,7 +377,7 @@ esp_err_t board_display_init(lv_display_t **out_disp)
         lv_indev_t *indev = lv_indev_create();
         lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
         lv_indev_set_read_cb(indev, touch_read);
-        lv_indev_set_user_data(indev, tp);
+        s_tp = tp;
         lv_indev_set_display(indev, disp);
         lvgl_port_unlock();
     } else {

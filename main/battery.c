@@ -9,6 +9,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "driver/usb_serial_jtag.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 
 static const char *TAG = "battery";
@@ -144,7 +145,8 @@ void battery_init(void)
     const adc_cali_curve_fitting_config_t cali = {
         .unit_id = ADC_UNIT_1, .chan = ADC_CH, .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT};
     if (adc_cali_create_scheme_curve_fitting(&cali, &s_cali) != ESP_OK) s_cali = NULL;
-    xTaskCreatePinnedToCore(battery_task, "battery", 3072, NULL, 2, NULL, 0);
+    // Stack in PSRAM: the task only reads the ADC (internal RAM is the scarce resource).
+    xTaskCreatePinnedToCoreWithCaps(battery_task, "battery", 3072, NULL, 2, NULL, 0, MALLOC_CAP_SPIRAM);
 }
 
 #ifdef BATT_DEMO

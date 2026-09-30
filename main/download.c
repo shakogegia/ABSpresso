@@ -411,6 +411,18 @@ dl_state_t download_state(const char *item_id, int *percent)
     return st;
 }
 
+bool download_busy(void)
+{
+    if (!s_lock) return false;
+    bool busy = false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < s_count && !busy; i++) {
+        busy = s_entries[i].state == DL_QUEUED || s_entries[i].state == DL_ACTIVE || s_entries[i].state == DL_REMOVING;
+    }
+    xSemaphoreGive(s_lock);
+    return busy;
+}
+
 uint32_t download_generation(void)
 {
     return s_generation;

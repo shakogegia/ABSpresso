@@ -12,6 +12,12 @@ esp_err_t board_display_init(lv_display_t **out_disp);
 
 // 0-100
 void board_set_backlight(int percent);
+// Panel sleep (display off + sleep-in) and wake. The backlight is separate.
+void board_display_power(bool on);
+// Reads the touch controller directly (for waking while LVGL is paused).
+bool board_touch_pressed(void);
+// Screen off and touch controller into its low-power scan, ready for deep sleep.
+void board_prepare_deep_sleep(void);
 
 // Brings up I2S to the PCM5101 DAC.
 esp_err_t board_audio_init(void);

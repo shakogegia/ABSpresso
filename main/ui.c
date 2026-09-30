@@ -569,3 +569,4 @@ bool ui_take_refresh_request(void)
     s_refresh_requested = false;
     return r;
 }
+

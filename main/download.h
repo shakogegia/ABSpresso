@@ -32,6 +32,8 @@ void download_remove(const char *item_id);
 dl_state_t download_state(const char *item_id, int *percent);
 // Changes whenever any download starts, progresses, finishes or is removed.
 uint32_t download_generation(void);
+// True while anything is queued, downloading or being removed.
+bool download_busy(void);
 
 /* For the player */
 

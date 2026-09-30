@@ -6,13 +6,45 @@
 #include "abs_api.h"
 #include "download.h"
 #include "esp_wifi.h"
+#include "power.h"
 #include "storage.h"
 #include "ui.h"
 #include "ui_priv.h"
 #include "wifi.h"
 
-enum { ROW_SERVER, ROW_LIBRARY, ROW_CONTENTS, ROW_UPDATED, ROW_WIFI, ROW_SD, ROW_COUNT };
-static const char *const s_keys[ROW_COUNT] = {"Server", "Library", "Contents", "Updated", "Wi-Fi", "SD card"};
+enum {
+    ROW_SERVER, ROW_LIBRARY, ROW_CONTENTS, ROW_UPDATED, ROW_WIFI, ROW_SD,
+    ROW_BRIGHT, ROW_SCREEN, ROW_SLEEP,  // tap to cycle
+    ROW_COUNT
+};
+static const char *const s_keys[ROW_COUNT] = {"Server", "Library", "Contents", "Updated", "Wi-Fi", "SD card",
+                                              "Brightness", "Screen off", "Sleep"};
+
+// Choices the power rows cycle through.
+static const int BRIGHTNESS[] = {20, 40, 60, 80, 100};
+static const int SCREEN_OFF_S[] = {30, 60, 120, 300, 0};
+static const int SLEEP_MIN[] = {5, 10, 30, 0};
+
+static int next_choice(const int *choices, int n, int current)
+{
+    for (int i = 0; i < n; i++) {
+        if (choices[i] == current) return choices[(i + 1) % n];
+    }
+    return choices[0];
+}
+
+static void on_power_row(lv_event_t *e)
+{
+    power_config_t c;
+    power_get_config(&c);
+    switch ((int)(intptr_t)lv_event_get_user_data(e)) {
+    case ROW_BRIGHT: c.brightness = next_choice(BRIGHTNESS, 5, c.brightness); break;
+    case ROW_SCREEN: c.screen_off_s = next_choice(SCREEN_OFF_S, 5, c.screen_off_s); break;
+    case ROW_SLEEP:  c.sleep_min = next_choice(SLEEP_MIN, 4, c.sleep_min); break;
+    }
+    power_set_config(&c);
+    settings_refresh();
+}
 
 static lv_obj_t *s_values[ROW_COUNT];
 
@@ -122,8 +154,8 @@ void settings_refresh(void)
     snprintf(buf, sizeof(buf), "%s%s", abs_library_name()[0] ? abs_library_name() : "-",
              nlibs > 1 ? "  " LV_SYMBOL_RIGHT : "");
     set_value(ROW_LIBRARY, buf);
-    snprintf(buf, sizeof(buf), "%d %s " LV_SYMBOL_BULLET " %d authors", g_book_count,
-             ui_library_is_podcast() ? "shows" : "books", g_author_count);
+    snprintf(buf, sizeof(buf), "%d %s, %d authors", g_book_count, ui_library_is_podcast() ? "shows" : "books",
+             g_author_count);
     set_value(ROW_CONTENTS, buf);
 
     uint32_t loaded;
@@ -153,6 +185,18 @@ void settings_refresh(void)
         snprintf(buf, sizeof(buf), "none");
     }
     set_value(ROW_SD, buf);
+
+    power_config_t pc;
+    power_get_config(&pc);
+    snprintf(buf, sizeof(buf), "%d%%  " LV_SYMBOL_RIGHT, pc.brightness);
+    set_value(ROW_BRIGHT, buf);
+    if (!pc.screen_off_s) snprintf(buf, sizeof(buf), "Never  " LV_SYMBOL_RIGHT);
+    else if (pc.screen_off_s < 60) snprintf(buf, sizeof(buf), "%d s  " LV_SYMBOL_RIGHT, pc.screen_off_s);
+    else snprintf(buf, sizeof(buf), "%d min  " LV_SYMBOL_RIGHT, pc.screen_off_s / 60);
+    set_value(ROW_SCREEN, buf);
+    if (!pc.sleep_min) snprintf(buf, sizeof(buf), "Never  " LV_SYMBOL_RIGHT);
+    else snprintf(buf, sizeof(buf), "after %d min  " LV_SYMBOL_RIGHT, pc.sleep_min);
+    set_value(ROW_SLEEP, buf);
 }
 
 void settings_build(lv_obj_t *parent)
@@ -170,17 +214,23 @@ void settings_build(lv_obj_t *parent)
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, lv_pct(100), 18);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        if (i >= ROW_BRIGHT) {
+            lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_ext_click_area(row, 3);
+            lv_obj_add_event_cb(row, on_power_row, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        }
         if (i == ROW_LIBRARY) {
             // Tap the library to choose another one.
             lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_set_ext_click_area(row, 6);
             lv_obj_add_event_cb(row, on_library_row, LV_EVENT_CLICKED, NULL);
         }
-        lv_obj_t *k = ui_label(row, &lv_font_montserrat_14, COLOR_MUTED, 70);
+        lv_obj_t *k = ui_label(row, &lv_font_montserrat_14, COLOR_MUTED, 84);
         lv_obj_set_style_text_align(k, LV_TEXT_ALIGN_LEFT, 0);
+        lv_label_set_long_mode(k, LV_LABEL_LONG_CLIP);  // one line
         lv_label_set_text(k, s_keys[i]);
         lv_obj_align(k, LV_ALIGN_LEFT_MID, 0, 0);
-        s_values[i] = ui_label(row, &lv_font_montserrat_14, COLOR_TEXT, 176);
+        s_values[i] = ui_label(row, &lv_font_montserrat_14, COLOR_TEXT, 164);
         lv_obj_set_style_text_align(s_values[i], LV_TEXT_ALIGN_RIGHT, 0);
         lv_label_set_long_mode(s_values[i], LV_LABEL_LONG_SCROLL_CIRCULAR);
         lv_obj_align(s_values[i], LV_ALIGN_RIGHT_MID, 0, 0);

@@ -11,6 +11,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "mbedtls/base64.h"
@@ -327,10 +328,11 @@ static void libs_task(void *arg)
 
 void ui_capture_start(void)
 {
+    // PSRAM stack: internal RAM is tight, and this task never touches flash.
 #ifdef CAPTURE_LIBS
-    xTaskCreatePinnedToCore(libs_task, "capture", 8192, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCoreWithCaps(libs_task, "capture", 8192, NULL, 2, NULL, 1, MALLOC_CAP_SPIRAM);
 #else
-    xTaskCreatePinnedToCore(capture_task, "capture", 8192, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCoreWithCaps(capture_task, "capture", 8192, NULL, 2, NULL, 1, MALLOC_CAP_SPIRAM);
 #endif
 }
 

@@ -261,7 +261,9 @@ void library_build(lv_obj_t *page)
     lv_obj_remove_style_all(s_settings);
     lv_obj_set_size(s_settings, LIST_W + 16, LIST_H);
     lv_obj_align(s_settings, LV_ALIGN_TOP_MID, 0, PAGE_TOP);
-    lv_obj_remove_flag(s_settings, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    // Scrolls: there are more settings than fit above the switcher.
+    lv_obj_remove_flag(s_settings, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollbar_mode(s_settings, LV_SCROLLBAR_MODE_OFF);
     settings_build(s_settings);
 
     s_switcher = switcher_create(page, PAGE_SWITCHER_Y, (const char *const *)s_names, VIEW_COUNT, on_switch);

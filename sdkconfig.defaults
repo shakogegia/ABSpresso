@@ -50,3 +50,10 @@ CONFIG_LV_USE_SNAPSHOT=y
 # SD card: long file names (book ids are 36-char UUIDs)
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
+
+# Power: frequency scaling (see power.c; no automatic light sleep)
+CONFIG_PM_ENABLE=y
+# No automatic light sleep is used, so don't spend internal RAM on CPU retention for it. (The PM
+# IRAM functions themselves can't be turned off on the S3.)
+# CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP is not set
+# CONFIG_PM_RESTORE_CACHE_TAGMEM_AFTER_LIGHT_SLEEP is not set

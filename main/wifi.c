@@ -46,8 +46,9 @@ esp_err_t wifi_start(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
-    // Power save adds latency spikes that starve the audio stream.
-    esp_wifi_set_ps(WIFI_PS_NONE);
+    // Modem sleep between beacons saves a lot of power; the ~minute of buffered audio rides out
+    // the added latency.
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     return ESP_OK;
 }
 

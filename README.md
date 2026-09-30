@@ -214,6 +214,12 @@ The console is on the board's native USB (USB-Serial/JTAG).
   PSRAM buffers. File data therefore goes through a small internal-RAM bounce buffer
   (`storage.c`), and `CONFIG_FATFS_VFS_FSTAT_BLKSIZE` is left at 0: a 4 KB stdio buffer would be
   allocated in PSRAM and silently scramble files.
+- **Power saving:** with no buttons, touch is the only way in. After a period without a touch the
+  screen dims and then turns off (panel asleep, LVGL paused, CPU allowed down to 80 MHz); audio
+  keeps playing, and the next touch wakes the screen without pressing anything. With the screen
+  off, nothing playing or downloading and no USB host attached, the device deep-sleeps; a touch
+  (the CST816 pulls its INT line, GPIO4, low) or the BOOT button wakes it, which restarts the
+  firmware. Wi-Fi uses modem sleep. Brightness and both timeouts are in Settings.
 - **Battery:** the charge level is read on GPIO8 (1:3 divider) and mapped through a typical LiPo
   curve. The charger's status pin only drives its LED and USB power isn't wired to a GPIO, so
   charging is inferred: a USB host on the ESP32's own USB port means external power; otherwise
