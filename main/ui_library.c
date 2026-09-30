@@ -18,7 +18,8 @@ typedef enum {
     VIEW_AUTHOR_BOOKS = VIEW_COUNT,  // drilled into one author (shown under "Authors")
 } view_t;
 
-static const char *const s_names[VIEW_COUNT] = {"Covers", "Books", "Authors", "Settings"};
+// "Books" becomes "Shows" in a podcast library.
+static const char *s_names[VIEW_COUNT] = {"Covers", "Books", "Authors", "Settings"};
 
 // Lists fill the space between the dock and the switcher, clear of the ring (see ui_priv.h).
 #define LIST_W 236
@@ -263,7 +264,7 @@ void library_build(lv_obj_t *page)
     lv_obj_remove_flag(s_settings, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     settings_build(s_settings);
 
-    s_switcher = switcher_create(page, PAGE_SWITCHER_Y, s_names, VIEW_COUNT, on_switch);
+    s_switcher = switcher_create(page, PAGE_SWITCHER_Y, (const char *const *)s_names, VIEW_COUNT, on_switch);
 
     // Right-edge ring segment from 1 o'clock to 4 o'clock (top = A, bottom = Z), ending above the
     // switcher so the two never overlap.
@@ -341,6 +342,12 @@ void library_set_books(void)
 
     carousel_set_items(s_carousel, g_alpha.idx, g_alpha.count, carousel_pos(s_carousel));
     apply_view();
+}
+
+void library_names_changed(void)
+{
+    s_names[VIEW_BOOKS] = ui_library_is_podcast() ? "Shows" : "Books";
+    if (s_switcher) switcher_select(s_switcher, s_view == VIEW_AUTHOR_BOOKS ? VIEW_AUTHORS : s_view);
 }
 
 void library_refresh(void)

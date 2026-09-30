@@ -10,6 +10,7 @@
 #include "cover.h"
 #include "player.h"
 #include "storage.h"
+#include "catalog.h"
 #include "download.h"
 #include "esp_timer.h"
 #include "ui.h"
@@ -22,69 +23,7 @@ static void show_message(const char *msg)
     lvgl_port_unlock();
 }
 
-#define CACHE_ITEMS STORAGE_ROOT "/items.json"
-#define CACHE_ME    STORAGE_ROOT "/me.json"
-#define CACHE_NAME  STORAGE_ROOT "/library.txt"
-#define RETRY_US    (30 * 1000000LL)
-
-static abs_book_t *s_books;
-static int s_count;
-
-static void show_books(abs_book_t *fresh, int n, bool cached)
-{
-    lvgl_port_lock(0);
-    ui_set_books(fresh, n);
-    ui_set_source(cached);
-    lvgl_port_unlock();
-    abs_free_books(s_books, s_count);
-    s_books = fresh;
-    s_count = n;
-}
-
-// The last library the server sent, from the SD card: instant start, and works offline.
-static bool load_cached(void)
-{
-    size_t items_len = 0;
-    char *items = storage_read_file(CACHE_ITEMS, &items_len);
-    char *me = storage_read_file(CACHE_ME, NULL);
-    abs_book_t *fresh = NULL;
-    int n = 0;
-    bool ok = items && abs_parse_books(items, me, &fresh, &n) == ESP_OK && n > 0;
-    free(items);
-    free(me);
-    if (!ok) {
-        if (storage_ready()) ESP_LOGW("main", "no usable library cache (%u bytes)", (unsigned)items_len);
-        return false;
-    }
-    download_sync_progress(fresh, n, false);
-    char *name = storage_read_file(CACHE_NAME, NULL);
-    abs_set_library_name(name);
-    free(name);
-    ESP_LOGI("main", "showing %d books from the SD cache", n);
-    show_books(fresh, n, true);
-    return true;
-}
-
-static bool load_network(bool quiet)
-{
-    abs_book_t *fresh = NULL;
-    int n = 0;
-    char *items = NULL, *me = NULL;
-    if (abs_get_books(&fresh, &n, &items, &me) != ESP_OK) {
-        if (!quiet) show_message("Couldn't reach Audiobookshelf.\nTap " LV_SYMBOL_REFRESH " to retry.");
-        return false;
-    }
-    if (storage_ready()) {
-        storage_write_file(CACHE_ITEMS, items, strlen(items));
-        storage_write_file(CACHE_ME, me, strlen(me));
-        storage_write_file(CACHE_NAME, abs_library_name(), strlen(abs_library_name()));
-    }
-    free(items);
-    free(me);
-    download_sync_progress(fresh, n, true);
-    show_books(fresh, n, false);
-    return true;
-}
+#define RETRY_US (30 * 1000000LL)
 
 void app_main(void)
 {
@@ -108,7 +47,8 @@ void app_main(void)
     download_init();
     wifi_start();
 
-    const bool cached = load_cached();
+    catalog_init();
+    bool cached = catalog_load_cached();
     bool online = false;
     int64_t last_try = -RETRY_US, started = esp_timer_get_time();
     bool first = true;
@@ -117,7 +57,7 @@ void app_main(void)
         const int64_t now = esp_timer_get_time();
         if (!online && wifi_is_connected() && now - last_try >= RETRY_US) {
             if (!cached) show_message("Loading library...");
-            online = load_network(cached);
+            online = catalog_load_network(cached);
             last_try = now;
             if (online && first) {
                 first = false;
@@ -131,9 +71,28 @@ void app_main(void)
         } else if (!online && !cached && !wifi_is_connected() && now - started > 15000000LL) {
             show_message("Still waiting for Wi-Fi...");
         }
+
+        char library[40];
+        if (ui_take_library_request(library, sizeof(library))) {
+            // Switch library: show its cache at once (if any), then refresh from the server.
+            char previous[40];
+            strlcpy(previous, catalog_library_id(), sizeof(previous));
+            catalog_select(library);
+            cached = catalog_load_cached();
+            if (wifi_is_connected()) {
+                online = catalog_load_network(cached);
+                last_try = now;
+            } else if (!cached) {
+                catalog_select(previous);  // nothing to show offline: stay where we were
+                show_message("That library isn't saved on this device yet.\nConnect to Wi-Fi first.");
+                vTaskDelay(pdMS_TO_TICKS(2500));
+                show_message(NULL);
+            }
+        }
+
         if (ui_take_refresh_request()) {
             if (wifi_is_connected()) {
-                online = load_network(false);
+                online = catalog_load_network(false);
                 last_try = now;
             } else {
                 show_message("Offline - showing the saved library.");

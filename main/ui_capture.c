@@ -112,7 +112,7 @@ static void lib_step(int d) { library_debug_step(d); }
 static void scrub_on(int v) { library_debug_scrub(v, true); }
 static void scrub_off(int v) { library_debug_scrub(v, false); }
 
-static void capture_task(void *arg)
+static void __attribute__((unused)) capture_task(void *arg)
 {
     esp_log_level_set("*", ESP_LOG_ERROR);
     lvgl_port_lock(0);
@@ -202,9 +202,118 @@ static void capture_task(void *arg)
     vTaskDelete(NULL);
 }
 
+#ifdef CAPTURE_LIBS
+#include <dirent.h>
+#include "storage.h"
+#include "ui.h"
+void settings_debug_open_picker(void);
+void settings_debug_close_picker(void);
+void episodes_debug_play(int i);
+
+static void open_picker(int unused) { settings_debug_open_picker(); }
+static void close_picker(int unused) { settings_debug_close_picker(); }
+static void show_episodes(int i) { ui_episodes_show(i); }
+static void play_ep(int i) { episodes_debug_play(i); }
+
+// Picks the first library of the given kind and asks the main loop to switch to it.
+static void request_kind(int podcast)
+{
+    int n;
+    const char *sel;
+    const abs_library_t *libs = ui_libraries(&n, &sel);
+    for (int i = 0; i < n; i++) {
+        if (libs[i].podcast == (bool)podcast) {
+            printf("LIBTEST switching to %s\n", libs[i].name);
+            ui_request_library(libs[i].id);
+            return;
+        }
+    }
+}
+
+static void list_cache(void)
+{
+    DIR *d = opendir(STORAGE_ROOT "/lib");
+    struct dirent *e;
+    while (d && (e = readdir(d))) {
+        if (e->d_name[0] == '.') continue;
+        char sub[320];
+        const char *kids[] = {"covers", "episodes"};
+        printf("LIBTEST cache lib/%.8s:", e->d_name);
+        for (int k = 0; k < 2; k++) {
+            snprintf(sub, sizeof(sub), STORAGE_ROOT "/lib/%s/%s", e->d_name, kids[k]);
+            DIR *c = opendir(sub);
+            int n = 0;
+            while (c && readdir(c)) n++;
+            if (c) closedir(c);
+            printf(" %s=%d", kids[k], n);
+        }
+        snprintf(sub, sizeof(sub), STORAGE_ROOT "/lib/%s/items.json", e->d_name);
+        FILE *f = fopen(sub, "rb");
+        long sz = 0;
+        if (f) { fseek(f, 0, SEEK_END); sz = ftell(f); fclose(f); }
+        printf(" items.json=%ld\n", sz);
+    }
+    if (d) closedir(d);
+}
+
+static void libs_task(void *arg)
+{
+    esp_log_level_set("*", ESP_LOG_ERROR);
+    esp_log_level_set("catalog", ESP_LOG_INFO);
+    esp_log_level_set("abs", ESP_LOG_INFO);
+    esp_log_level_set("player", ESP_LOG_INFO);
+    lvgl_port_lock(0);
+    s_vtime = lv_tick_get();
+    lv_tick_set_cb(virtual_tick);
+    lvgl_port_unlock();
+    printf("CAPTURE BEGIN\n");
+
+    locked(show_page, PAGE_LIBRARY);
+    locked(lib_view, 3);
+    wait_real(500);
+    shot("settings", 0);
+    locked(open_picker, 0);
+    wait_real(300);
+    shot("library_picker", 0);
+
+    locked(close_picker, 0);  // a real tap closes it
+    locked(request_kind, 1);  // Podcasts
+    wait_real(15000);
+    locked(show_page, PAGE_HOME);
+    wait_real(4000);
+    shot("podcast_home", 0);
+    locked(show_page, PAGE_LIBRARY);
+    locked(lib_view, 1);  // Shows
+    wait_real(1500);
+    shot("podcast_shows", 0);
+    locked(show_episodes, g_alpha.count ? g_alpha.idx[0] : 0);
+    wait_real(8000);
+    shot("podcast_episodes", 0);
+    locked(play_ep, 0);
+    wait_real(9000);
+    shot("podcast_playing", 0);
+    player_stop();
+    wait_real(1500);
+
+    locked(request_kind, 0);  // back to Audiobooks
+    wait_real(15000);
+    locked(show_page, PAGE_HOME);
+    wait_real(3000);
+    shot("books_home_again", 0);
+    list_cache();
+
+    printf("CAPTURE DONE\n");
+    vTaskDelete(NULL);
+}
+#endif
+
 void ui_capture_start(void)
 {
+#ifdef CAPTURE_LIBS
+    xTaskCreatePinnedToCore(libs_task, "capture", 8192, NULL, 2, NULL, 1);
+#else
     xTaskCreatePinnedToCore(capture_task, "capture", 8192, NULL, 2, NULL, 1);
+#endif
 }
 
 #endif

@@ -16,6 +16,91 @@ static const char *const s_keys[ROW_COUNT] = {"Server", "Library", "Contents", "
 
 static lv_obj_t *s_values[ROW_COUNT];
 
+/* ---------- library picker ---------- */
+
+static lv_obj_t *s_picker, *s_picker_list;
+
+static void picker_close(void)
+{
+    lv_obj_add_flag(s_picker, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void on_picker_close(lv_event_t *e) { picker_close(); }
+
+static void on_pick(lv_event_t *e)
+{
+    int n;
+    const char *sel;
+    const abs_library_t *libs = ui_libraries(&n, &sel);
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    picker_close();
+    if (i < 0 || i >= n || strcmp(libs[i].id, sel) == 0) return;
+    ui_request_library(libs[i].id);
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Opening %s...", libs[i].name);
+    ui_show_message(msg);
+}
+
+static void on_library_row(lv_event_t *e)
+{
+    int n;
+    const char *sel;
+    const abs_library_t *libs = ui_libraries(&n, &sel);
+    if (n < 2) return;
+    lv_obj_clean(s_picker_list);
+    for (int i = 0; i < n; i++) {
+        const bool current = strcmp(libs[i].id, sel) == 0;
+        lv_obj_t *btn = lv_list_add_button(s_picker_list, NULL, NULL);
+        lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_bg_color(btn, current ? COLOR_ACCENT : COLOR_CARD, 0);
+        lv_obj_set_style_bg_color(btn, COLOR_ACCENT, LV_STATE_PRESSED);
+        lv_obj_set_style_radius(btn, 12, 0);
+        lv_obj_set_style_border_width(btn, 0, 0);
+        lv_obj_set_style_pad_all(btn, 10, 0);
+        lv_obj_set_style_pad_row(btn, 2, 0);
+        lv_obj_t *t = lv_label_create(btn);
+        lv_label_set_text(t, libs[i].name);
+        ui_one_line(t, &lv_font_montserrat_16);
+        lv_obj_set_style_text_color(t, current ? lv_color_black() : COLOR_TEXT, 0);
+        lv_obj_t *k = lv_label_create(btn);
+        lv_label_set_text(k, libs[i].podcast ? "Podcast library" : "Audiobook library");
+        ui_one_line(k, &lv_font_montserrat_14);
+        lv_obj_set_style_text_color(k, current ? lv_color_black() : COLOR_MUTED, 0);
+        lv_obj_add_event_cb(btn, on_pick, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    }
+    lv_obj_remove_flag(s_picker, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_picker);
+}
+
+bool libpicker_visible(void)
+{
+    return s_picker && !lv_obj_has_flag(s_picker, LV_OBJ_FLAG_HIDDEN);
+}
+
+void libpicker_build(lv_obj_t *scr)
+{
+    s_picker = ui_page_container(scr);
+    lv_obj_set_style_bg_color(s_picker, COLOR_BG, 0);
+    lv_obj_set_style_bg_opa(s_picker, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_picker, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *close = ui_round_button(s_picker, 36, LV_SYMBOL_CLOSE, &lv_font_montserrat_16, on_picker_close, NULL);
+    lv_obj_align(close, LV_ALIGN_CENTER, 0, -128);
+    lv_obj_t *title = ui_label(s_picker, &lv_font_montserrat_16, COLOR_ACCENT, 200);
+    lv_label_set_text(title, "Choose library");
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, -90);
+
+    s_picker_list = lv_list_create(s_picker);
+    lv_obj_set_size(s_picker_list, 240, 210);
+    lv_obj_align(s_picker_list, LV_ALIGN_CENTER, 0, 36);
+    lv_obj_set_style_bg_opa(s_picker_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_picker_list, 0, 0);
+    lv_obj_set_style_pad_all(s_picker_list, 0, 0);
+    lv_obj_set_style_pad_row(s_picker_list, 6, 0);
+    lv_obj_set_scrollbar_mode(s_picker_list, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(s_picker, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void on_refresh(lv_event_t *e)
 {
     ui_request_refresh();
@@ -31,8 +116,14 @@ void settings_refresh(void)
 {
     char buf[80];
     set_value(ROW_SERVER, abs_server());
-    set_value(ROW_LIBRARY, abs_library_name()[0] ? abs_library_name() : "-");
-    snprintf(buf, sizeof(buf), "%d books " LV_SYMBOL_BULLET " %d authors", g_book_count, g_author_count);
+    int nlibs;
+    const char *sel;
+    ui_libraries(&nlibs, &sel);
+    snprintf(buf, sizeof(buf), "%s%s", abs_library_name()[0] ? abs_library_name() : "-",
+             nlibs > 1 ? "  " LV_SYMBOL_RIGHT : "");
+    set_value(ROW_LIBRARY, buf);
+    snprintf(buf, sizeof(buf), "%d %s " LV_SYMBOL_BULLET " %d authors", g_book_count,
+             ui_library_is_podcast() ? "shows" : "books", g_author_count);
     set_value(ROW_CONTENTS, buf);
 
     uint32_t loaded;
@@ -79,6 +170,12 @@ void settings_build(lv_obj_t *parent)
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, lv_pct(100), 18);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        if (i == ROW_LIBRARY) {
+            // Tap the library to choose another one.
+            lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_ext_click_area(row, 6);
+            lv_obj_add_event_cb(row, on_library_row, LV_EVENT_CLICKED, NULL);
+        }
         lv_obj_t *k = ui_label(row, &lv_font_montserrat_14, COLOR_MUTED, 70);
         lv_obj_set_style_text_align(k, LV_TEXT_ALIGN_LEFT, 0);
         lv_label_set_text(k, s_keys[i]);
@@ -100,3 +197,15 @@ void settings_build(lv_obj_t *parent)
     lv_obj_center(l);
     lv_obj_add_event_cb(btn, on_refresh, LV_EVENT_CLICKED, NULL);
 }
+
+#ifdef UI_CAPTURE
+void settings_debug_open_picker(void)
+{
+    on_library_row(NULL);
+}
+
+void settings_debug_close_picker(void)
+{
+    picker_close();
+}
+#endif

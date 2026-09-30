@@ -66,7 +66,10 @@ void ui_book_subtitle(const abs_book_t *b, char *buf, size_t len);
 void ui_book_subtitle_plain(const abs_book_t *b, char *buf, size_t len);
 bool ui_book_in_progress(const abs_book_t *b);
 lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index);
+// Tap on a book: plays it; tap on a podcast show: opens its episode list.
 void ui_open_book(int book_index);
+// Plays straight away (a show resumes its latest episode).
+void ui_play_book(int book_index);
 void ui_show_page(ui_page_t page);
 
 /* book details sheet (ui_sheet.c) */
@@ -78,9 +81,21 @@ bool ui_sheet_visible(void);
 // Index into g_books of the book with this id, or -1.
 int ui_find_book(const char *item_id);
 
+/* libraries (ui.c) */
+const abs_library_t *ui_libraries(int *count, const char **selected_id);
+bool ui_library_is_podcast(void);
+
+/* podcast episode list overlay (ui_episodes.c) */
+void episodes_build(lv_obj_t *scr);
+void ui_episodes_show(int book_index);
+void ui_episodes_refresh(void);
+bool ui_episodes_visible(void);
+
 /* settings view inside the Library page (ui_settings.c) */
 void settings_build(lv_obj_t *parent);
 void settings_refresh(void);
+void libpicker_build(lv_obj_t *scr);
+bool libpicker_visible(void);
 
 /* pages */
 void home_build(lv_obj_t *page);
@@ -92,6 +107,8 @@ void home_lists_changed(void);
 void library_build(lv_obj_t *page);
 void library_set_books(void);
 void library_refresh(void);
+// The selected library changed type (books/podcasts): relabel views.
+void library_names_changed(void);
 
 void playing_build(lv_obj_t *page);
 void playing_prepare(int book_index);

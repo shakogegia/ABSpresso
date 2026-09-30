@@ -23,7 +23,10 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
   at the bottom, where dots show which shelf you're on.
 - **Library:** Covers, Books (A-Z list) and Authors, switched with the same bottom pill as Home,
   with an A-Z scrub ring on the right edge. A Settings view there shows library, Wi-Fi and SD
-  card info and refreshes the library.
+  card info, refreshes the library, and switches between the server's libraries.
+- **Podcasts:** podcast libraries work too. Shows appear like books; tapping one lists its
+  episodes (in progress first, then newest), and episodes play, resume and sync progress like
+  books.
 - **Now Playing:** cover art backdrop, a chapter-progress ring you can drag to scrub, ±30 s,
   previous/next chapter and volume. When nothing is loaded it offers your most recent book to
   resume.
@@ -111,12 +114,15 @@ decoder, and held in an LRU cache in PSRAM (and on the SD card when one is fitte
 ### SD card: caching and downloads
 
 With a FAT-formatted microSD card inserted (it is never formatted by the firmware), everything
-lives under `/sdcard/abs/`:
+lives under `/sdcard/abs/`. Each library has its own cache folder, so switching libraries never
+overwrites another's cache; downloads are keyed by item id, which is unique across the server.
 
 | Path | Contents |
 | --- | --- |
-| `items.json`, `me.json` | The last library and progress the server sent. Shown at boot before Wi-Fi is up, then refreshed. |
-| `covers/<id>_<size>.jpg` | Cover JPEGs as downloaded; read back in ~45 ms instead of a network round trip. |
+| `libraries.json`, `me.json` | The server's libraries and the user's progress (shared by all libraries). |
+| `lib/<library id>/items.json` | That library's last item list. Shown at boot before Wi-Fi is up, then refreshed. |
+| `lib/<library id>/covers/<id>_<size>.jpg` | Cover JPEGs as downloaded; read back in ~45 ms instead of a network round trip. |
+| `lib/<library id>/episodes/<id>.json` | A podcast's episode list with progress, for browsing offline. |
 | `dl/<id>/audio.ts` | A downloaded book: its HLS segments appended in order. |
 | `dl/<id>/index.bin` | End offset of each completed segment (so seeking is one lookup). |
 | `dl/<id>/meta.json` | Duration and chapters, for playback without the server. |
@@ -144,6 +150,7 @@ main/
   wifi.c/.h        station mode using secrets.h
   abs_api.c/.h     Audiobookshelf REST client (library, progress, sessions, covers, HLS segments)
   player.c/.h      streaming player: fetch / decode / control tasks
+  catalog.c/.h     selected library, per-library SD cache, loading from cache or server
   cover.c/.h       cover download (SD-cached), JPEG decode and PSRAM LRU cache
   storage.c/.h     SD card mount and safe file helpers
   download.c/.h    background book downloads and offline progress
@@ -153,6 +160,9 @@ main/
   ui_library.c     Library list / covers / authors + A-Z ring
   ui_player.c      Now Playing
   ui_sheet.c       book details sheet (play / download / remove)
+  ui_episodes.c    podcast episode list
+  ui_settings.c    Settings view and library picker
+  switcher.c/.h    bottom "< Name >" pill shared by Home and Library
   lv_mem_psram.c   LVGL allocator that keeps all UI objects in PSRAM
   secrets.h.example
 ```
@@ -241,7 +251,8 @@ masked to the round panel. Note that the capture shows your own library's titles
   and falls back to a title card.
 - No screen timeout or sleep yet; the first library load and first cover take a few seconds
   (TLS handshakes). An SD-card cache for covers and the library is a planned improvement.
-- Only the first book library on the server is shown; podcasts aren't supported.
+- Podcast episodes can't be downloaded yet (books can). Very long feeds show their first 150
+  episodes (in-progress and newest).
 - Listening to a downloaded book updates your progress but isn't recorded as a listening session
   in the server's stats.
 - Cached covers aren't refreshed if you change a book's cover on the server (delete

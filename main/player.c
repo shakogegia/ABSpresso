@@ -53,6 +53,7 @@ typedef struct {
     char id[40];
     char title[128];
     char author[96];
+    char episode_id[40];
     double book_time;  // the server's saved position for the book
 } cmd_t;
 
@@ -483,7 +484,10 @@ static void close_session(void)
 static bool open_session(const char *item_id)
 {
     set_state(PLAYER_LOADING);
-    s_local = download_state(item_id, NULL) == DL_DONE && download_load_meta(item_id, &s_session) == ESP_OK;
+    const char *episode = s_status.episode_id;  // only the control task writes it
+    // Downloads are books only; episodes always stream.
+    s_local = !episode[0] && download_state(item_id, NULL) == DL_DONE &&
+              download_load_meta(item_id, &s_session) == ESP_OK;
     if (s_local) {
         // Start from any offline listening not yet on the server, else the server's position.
         double pos;
@@ -494,9 +498,15 @@ static bool open_session(const char *item_id)
         s_last_sync_us = esp_timer_get_time();
         return true;
     }
-    if (abs_start_session(item_id, false, &s_session) != ESP_OK) {
+    if (abs_start_session(item_id, episode, false, &s_session) != ESP_OK) {
         set_state(PLAYER_ERROR);
         return false;
+    }
+    if (episode[0] && s_session.display_title[0]) {
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        strlcpy(s_status.title, s_session.display_title, sizeof(s_status.title));
+        if (s_session.display_author[0]) strlcpy(s_status.author, s_session.display_author, sizeof(s_status.author));
+        xSemaphoreGive(s_lock);
     }
     s_have_session = true;
     s_last_sync_us = esp_timer_get_time();
@@ -521,12 +531,14 @@ static void handle(const cmd_t *c)
 
     switch (c->type) {
     case CMD_OPEN:
-        if (s_have_session && strcmp(c->id, s_status.item_id) == 0 && st != PLAYER_ERROR) {
+        if (s_have_session && strcmp(c->id, s_status.item_id) == 0 && strcmp(c->episode_id, s_status.episode_id) == 0 &&
+            st != PLAYER_ERROR) {
             break;  // already loaded
         }
         close_session();
         xSemaphoreTake(s_lock, portMAX_DELAY);
         strlcpy(s_status.item_id, c->id, sizeof(s_status.item_id));
+        strlcpy(s_status.episode_id, c->episode_id, sizeof(s_status.episode_id));
         strlcpy(s_status.title, c->title, sizeof(s_status.title));
         strlcpy(s_status.author, c->author, sizeof(s_status.author));
         s_status.chapter[0] = 0;
@@ -707,6 +719,21 @@ void player_open(const abs_book_t *book)
     strlcpy(c.title, book->title, sizeof(c.title));
     strlcpy(c.author, book->author, sizeof(c.author));
     c.book_time = book->current_time;
+    if (book->podcast) {
+        // Shows play an episode: carry on with the latest one (the UI picks others explicitly).
+        strlcpy(c.episode_id, book->resume_episode, sizeof(c.episode_id));
+        if (!c.episode_id[0]) return;
+    }
+    xQueueSend(s_cmds, &c, 0);
+}
+
+void player_open_episode(const char *item_id, const char *episode_id, const char *title, const char *show)
+{
+    cmd_t c = {.type = CMD_OPEN};
+    strlcpy(c.id, item_id, sizeof(c.id));
+    strlcpy(c.episode_id, episode_id, sizeof(c.episode_id));
+    strlcpy(c.title, title, sizeof(c.title));
+    strlcpy(c.author, show, sizeof(c.author));
     xQueueSend(s_cmds, &c, 0);
 }
 

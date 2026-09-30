@@ -10,6 +10,7 @@
 #include <string.h>
 #include <strings.h>
 #include "esp_heap_caps.h"
+#include "esp_lvgl_port.h"
 #include "download.h"
 #include "player.h"
 #include "ui_priv.h"
@@ -98,7 +99,10 @@ void ui_book_subtitle(const abs_book_t *b, char *buf, size_t len)
 
 void ui_book_subtitle_plain(const abs_book_t *b, char *buf, size_t len)
 {
-    if (b->finished) {
+    if (b->podcast) {
+        snprintf(buf, len, "%s  " LV_SYMBOL_BULLET " %d episode%s", b->author, b->num_episodes,
+                 b->num_episodes == 1 ? "" : "s");
+    } else if (b->finished) {
         snprintf(buf, len, "%s  " LV_SYMBOL_OK, b->author);
     } else if (b->current_time > 0 && b->progress < 0.01f) {
         snprintf(buf, len, "%s  " LV_SYMBOL_BULLET " <1%%", b->author);
@@ -165,7 +169,22 @@ lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index)
 void ui_open_book(int book_index)
 {
     if (book_index < 0 || book_index >= g_book_count) return;
-    player_open(&g_books[book_index]);
+    if (g_books[book_index].podcast) {
+        ui_episodes_show(book_index);
+        return;
+    }
+    ui_play_book(book_index);
+}
+
+void ui_play_book(int book_index)
+{
+    if (book_index < 0 || book_index >= g_book_count) return;
+    const abs_book_t *b = &g_books[book_index];
+    if (b->podcast && !b->resume_episode[0]) {
+        ui_episodes_show(book_index);
+        return;
+    }
+    player_open(b);
     playing_prepare(book_index);
     ui_show_page(PAGE_PLAYER);
 }
@@ -229,6 +248,11 @@ static void refresh_timer(lv_timer_t *t)
         ui_sheet_refresh();
         return;
     }
+    if (ui_episodes_visible()) {
+        ui_episodes_refresh();
+        return;
+    }
+    if (libpicker_visible()) return;
 
     switch (s_page) {
     case PAGE_HOME:    home_refresh(); break;
@@ -264,6 +288,8 @@ void ui_init(void)
     }
 
     sheet_build(s_scr);
+    episodes_build(s_scr);
+    libpicker_build(s_scr);
 
     s_msg = ui_label(s_scr, &lv_font_montserrat_16, COLOR_MUTED, 240);
     lv_label_set_long_mode(s_msg, LV_LABEL_LONG_WRAP);
@@ -271,6 +297,60 @@ void ui_init(void)
 
     ui_show_page(PAGE_HOME);
     lv_timer_create(refresh_timer, 250, NULL);
+}
+
+void ui_show_message_locked(const char *msg)
+{
+    lvgl_port_lock(0);
+    ui_show_message(msg);
+    lvgl_port_unlock();
+}
+
+/* ---------- libraries ---------- */
+
+static abs_library_t *s_libs;
+static int s_lib_count;
+static char s_lib_selected[40];
+static char s_lib_request[40];
+static volatile bool s_lib_requested;
+
+void ui_set_libraries(const abs_library_t *libs, int count, const char *selected_id)
+{
+    free(s_libs);
+    s_libs = heap_caps_malloc((count ? count : 1) * sizeof(abs_library_t), MALLOC_CAP_SPIRAM);
+    memcpy(s_libs, libs, count * sizeof(abs_library_t));
+    s_lib_count = count;
+    strlcpy(s_lib_selected, selected_id, sizeof(s_lib_selected));
+    library_names_changed();
+}
+
+const abs_library_t *ui_libraries(int *count, const char **selected_id)
+{
+    *count = s_lib_count;
+    *selected_id = s_lib_selected;
+    return s_libs;
+}
+
+bool ui_library_is_podcast(void)
+{
+    for (int i = 0; i < s_lib_count; i++) {
+        if (strcmp(s_libs[i].id, s_lib_selected) == 0) return s_libs[i].podcast;
+    }
+    return false;
+}
+
+void ui_request_library(const char *library_id)
+{
+    strlcpy(s_lib_request, library_id, sizeof(s_lib_request));
+    s_lib_requested = true;
+}
+
+bool ui_take_library_request(char *library_id, size_t len)
+{
+    if (!s_lib_requested) return false;
+    s_lib_requested = false;
+    strlcpy(library_id, s_lib_request, len);
+    return true;
 }
 
 void ui_show_message(const char *msg)

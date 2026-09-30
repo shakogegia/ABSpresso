@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "abs_api.h"
 
@@ -14,6 +15,15 @@ void ui_set_books(const abs_book_t *books, int count);
 void ui_set_source(bool from_cache);
 // When the library was last loaded (lv_tick), and whether it came from the cache.
 void ui_get_source(uint32_t *loaded_tick, bool *from_cache);
+
+// Like ui_show_message(), but takes the LVGL lock itself (for other tasks).
+void ui_show_message_locked(const char *msg);
+
+// The server's libraries and which one is selected (for Settings). The UI keeps its own copy.
+void ui_set_libraries(const abs_library_t *libs, int count, const char *selected_id);
+// The user picked another library: the main loop collects it and loads that library.
+void ui_request_library(const char *library_id);
+bool ui_take_library_request(char *library_id, size_t len);
 
 // Ask the main loop to reload the library.
 void ui_request_refresh(void);

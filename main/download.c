@@ -182,7 +182,7 @@ static bool run(entry_t *en_snapshot)
     char id[40];
     strlcpy(id, en_snapshot->id, sizeof(id));
     abs_session_t session;
-    if (abs_start_session(id, true, &session) != ESP_OK) return false;
+    if (abs_start_session(id, NULL, true, &session) != ESP_OK) return false;
 
     const int total = (int)ceil(session.duration / SEGMENT_SECONDS);
     if (!file_exists(id, "meta.json")) write_meta(id, &session, total);

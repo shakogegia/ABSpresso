@@ -16,6 +16,7 @@ typedef enum {
 typedef struct {
     player_state_t state;
     char item_id[40];
+    char episode_id[40];    // set when playing a podcast episode
     char title[128];
     char author[96];
     char chapter[96];
@@ -32,7 +33,10 @@ typedef struct {
 void player_init(void);
 
 // All of these queue a command and return immediately.
+// Plays a book; for a podcast show, resumes its most recent in-progress episode (if any).
 void player_open(const abs_book_t *book);
+// Plays one podcast episode. The title/author shown are replaced by the server's once it opens.
+void player_open_episode(const char *item_id, const char *episode_id, const char *title, const char *show);
 void player_toggle(void);
 void player_seek_relative(double seconds);
 void player_seek_to(double seconds);

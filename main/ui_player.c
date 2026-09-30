@@ -52,7 +52,7 @@ static void on_toggle(lv_event_t *e)
     player_status_t st;
     player_get_status(&st);
     if (!player_loaded(&st)) {
-        if (s_resume >= 0) ui_open_book(s_resume);
+        if (s_resume >= 0) ui_play_book(s_resume);
         return;
     }
     player_toggle();
@@ -150,7 +150,12 @@ static void refresh_idle(void)
     set_text(s_chapter, b->author);
     if (lv_tick_get() > s_state_override_until) set_text(s_state, "Tap " LV_SYMBOL_PLAY " to resume");
     char buf[48];
-    fmt_remaining(buf, sizeof(buf), b->current_time, b->duration);
+    if (b->podcast) {
+        // Shows have no length of their own: describe the episode that will resume.
+        snprintf(buf, sizeof(buf), "Latest episode  " LV_SYMBOL_BULLET "  %d%%", (int)(b->progress * 100) ?: 1);
+    } else {
+        fmt_remaining(buf, sizeof(buf), b->current_time, b->duration);
+    }
     set_text(s_remaining, buf);
     set_text(s_time, "");
     lv_arc_set_value(s_arc, (int)(1000 * b->progress));

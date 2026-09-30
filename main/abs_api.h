@@ -18,7 +18,29 @@ typedef struct {
     bool finished;
     double last_update;    // progress timestamp (ms), 0 if never played
     double added_at;       // when the item was added to the library (ms)
+    // Podcast libraries: each item is a show. Progress fields then describe the most recently
+    // played unfinished episode, which resume_episode names.
+    bool podcast;
+    int num_episodes;
+    char resume_episode[40];
 } abs_book_t;
+
+typedef struct {
+    char id[40];
+    char name[64];
+    bool podcast;
+} abs_library_t;
+
+typedef struct {
+    char id[40];
+    char *title;
+    double duration;
+    double published_at;   // ms
+    double current_time;
+    float progress;
+    bool finished;
+    double last_update;
+} abs_episode_t;
 
 typedef struct {
     char *title;
@@ -33,22 +55,38 @@ typedef struct {
     double duration;
     abs_chapter_t *chapters;
     int chapter_count;
+    char display_title[128];   // episode title for podcasts
+    char display_author[96];   // show title for podcasts
 } abs_session_t;
 
 void abs_api_init(void);
 
-// Books from the first book library, sorted A-Z by sort_title. Also returns the raw item and
-// user JSON (caller frees) so they can be cached and re-parsed offline.
-esp_err_t abs_get_books(abs_book_t **out_books, int *out_count, char **items_json, char **me_json);
-// Name of the library abs_get_books() read from (or one restored from cache), and the server host.
+// All libraries on the server (books and podcasts), plus the raw JSON for caching.
+esp_err_t abs_get_libraries(abs_library_t **out, int *count, char **json);
+esp_err_t abs_parse_libraries(const char *json, abs_library_t **out, int *count);
+
+// Items of one library, sorted A-Z by sort_title. Also returns the raw item and user JSON
+// (caller frees) so they can be cached and re-parsed offline.
+esp_err_t abs_get_books(const char *library_id, abs_book_t **out_books, int *out_count, char **items_json,
+                        char **me_json);
+// Name of the library being shown (for display), and the server host.
 const char *abs_library_name(void);
 void abs_set_library_name(const char *name);
 const char *abs_server(void);
+
+// A podcast's episodes with the user's progress: unfinished in-progress ones first (most recent
+// first), then newest published.
+esp_err_t abs_get_episodes(const char *item_id, abs_episode_t **out, int *count);
+void abs_free_episodes(abs_episode_t *eps, int count);
+// Compact JSON for caching episodes offline (caller frees), and back.
+char *abs_episodes_to_json(const abs_episode_t *eps, int count);
+esp_err_t abs_episodes_from_json(const char *json, abs_episode_t **out, int *count);
 esp_err_t abs_parse_books(const char *items_json, const char *me_json, abs_book_t **out_books, int *out_count);
 void abs_free_books(abs_book_t *books, int count);
 
-// Starts an HLS (transcoded) playback session at the saved position.
-esp_err_t abs_start_session(const char *item_id, bool for_download, abs_session_t *out);
+// Starts an HLS (transcoded) playback session at the saved position. episode_id is NULL/"" for
+// books, or the episode to play for podcasts.
+esp_err_t abs_start_session(const char *item_id, const char *episode_id, bool for_download, abs_session_t *out);
 void abs_free_session(abs_session_t *s);
 esp_err_t abs_sync_session(const char *session_id, double current_time, double time_listening, double duration);
 esp_err_t abs_close_session(const char *session_id, double current_time, double time_listening);

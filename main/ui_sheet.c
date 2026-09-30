@@ -127,6 +127,10 @@ void ui_sheet_refresh(void)
 void ui_sheet_show(int book_index)
 {
     if (book_index < 0 || book_index >= g_book_count) return;
+    if (g_books[book_index].podcast) {  // shows have episodes instead of book details
+        ui_episodes_show(book_index);
+        return;
+    }
     const abs_book_t *b = &g_books[book_index];
     s_book = book_index;
     s_confirm_until = 0;

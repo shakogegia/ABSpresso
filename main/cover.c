@@ -12,9 +12,9 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "jpeg_decoder.h"
+#include "catalog.h"
 #include "storage.h"
 
-#define COVER_DIR STORAGE_ROOT "/covers"
 
 static const char *TAG = "cover";
 
@@ -122,11 +122,29 @@ static lv_image_dsc_t *decode(const uint8_t *jpg, size_t len, bool dim)
     return dsc;
 }
 
+// Covers are cached per library: <library cache dir>/covers/<item id>_<size>.jpg ("" without a card).
+static void cover_path(const char *id, int size, char *out, size_t len)
+{
+    static char made[96];
+    char dir[96];
+    catalog_dir(dir, sizeof(dir));
+    if (!dir[0]) {
+        out[0] = 0;
+        return;
+    }
+    strlcat(dir, "/covers", sizeof(dir));
+    if (strcmp(dir, made) != 0) {  // create each library's folder once
+        storage_mkdirs(dir);
+        strlcpy(made, dir, sizeof(made));
+    }
+    snprintf(out, len, "%s/%s_%d.jpg", dir, id, size);
+}
+
 // Covers come from the SD card when cached there; otherwise from the server (and are then saved).
 static esp_err_t load_jpeg(const char *id, int size, uint8_t **jpg, size_t *len, bool *from_sd)
 {
     char path[128];
-    snprintf(path, sizeof(path), COVER_DIR "/%s_%d.jpg", id, size);
+    cover_path(id, size, path, sizeof(path));
     *jpg = (uint8_t *)storage_read_file(path, len);
     if (*jpg && *len > 0) {
         *from_sd = true;
@@ -135,7 +153,7 @@ static esp_err_t load_jpeg(const char *id, int size, uint8_t **jpg, size_t *len,
     free(*jpg);
     *jpg = NULL;
     esp_err_t err = abs_get_cover(id, size, jpg, len);
-    if (err == ESP_OK && storage_ready()) {
+    if (err == ESP_OK && path[0]) {
         storage_write_file(path, *jpg, *len);
     }
     return err;
@@ -168,14 +186,14 @@ static void cover_task(void *arg)
                 if (!dsc && from_sd) {
                     // A damaged cache file: drop it and fetch a fresh copy.
                     char path[128];
-                    snprintf(path, sizeof(path), COVER_DIR "/%s_%d.jpg", k.id, size);
+                    cover_path(k.id, size, path, sizeof(path));
                     unlink(path);
                     free(jpg);
                     jpg = NULL;
                     from_sd = false;
                     if (abs_get_cover(k.id, size, &jpg, &len) == ESP_OK) {
                         dsc = decode(jpg, len, k.kind == COVER_BACKDROP);
-                        if (dsc) storage_write_file(path, jpg, len);
+                        if (dsc && path[0]) storage_write_file(path, jpg, len);
                     }
                 }
             }
@@ -294,7 +312,6 @@ const lv_image_dsc_t *cover_get(const char *item_id, cover_kind_t kind)
 
 void cover_init(void)
 {
-    if (storage_ready()) storage_mkdirs(COVER_DIR);
     s_lock = xSemaphoreCreateMutex();
     // Stack in PSRAM: this task never touches flash, and internal RAM is the scarce resource.
     xTaskCreatePinnedToCoreWithCaps(cover_task, "cover", 8192, NULL, 3, &s_task, 0, MALLOC_CAP_SPIRAM);
