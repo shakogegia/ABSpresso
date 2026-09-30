@@ -64,3 +64,7 @@ CONFIG_LV_USE_QRCODE=y
 # Keep a crash dump in flash (read it with idf.py coredump-info), so crashes on battery aren't lost
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+
+# Internal RAM is the scarce resource: 16 static Wi-Fi TX buffers (1.6 KB each) is more than a
+# player that mostly downloads needs
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
