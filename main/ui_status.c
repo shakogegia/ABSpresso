@@ -12,6 +12,7 @@
 #define COLOR_OFF  lv_color_hex(0x4A545E)  // an "off" icon: visible but clearly inactive
 #define BATT_W     30
 #define BATT_H     16
+#define PCT_W      38  // "100%" in Montserrat 14
 
 static lv_obj_t *s_bt, *s_wifi, *s_batt, *s_fill, *s_nub, *s_bolt, *s_pct;
 
@@ -39,12 +40,13 @@ void status_refresh(void)
         lv_obj_add_flag(s_pct, LV_OBJ_FLAG_HIDDEN);
         return;
     }
+    lv_obj_remove_flag(s_pct, LV_OBJ_FLAG_HIDDEN);
 
-    // One icon, three looks: on battery the fill shows the level (with the percentage beside it);
-    // charging is an orange outline with a bolt inside; full is solid green. The percentage is
-    // only shown on battery, since the voltage says little about the level while charging.
+    // One icon, three looks, always with a label beside it: on battery the fill shows the level and
+    // the percentage; charging is a green outline with a bolt inside ("Chrg"); full is solid green
+    // ("Full"). The voltage says little about the level while charging, so no percentage then.
     const bool on_battery = !b.charging && !b.charged;
-    const lv_color_t outline = b.charging ? COLOR_ACCENT : (b.charged ? COLOR_OK : COLOR_TEXT);
+    const lv_color_t outline = on_battery ? COLOR_TEXT : COLOR_OK;
     lv_obj_set_style_border_color(s_batt, outline, 0);
     lv_obj_set_style_bg_color(s_nub, outline, 0);
 
@@ -63,14 +65,11 @@ void status_refresh(void)
     if (b.charging) lv_obj_remove_flag(s_bolt, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(s_bolt, LV_OBJ_FLAG_HIDDEN);
 
-    if (on_battery) {
-        char txt[8];
-        snprintf(txt, sizeof(txt), "%d%%", b.percent);
-        if (strcmp(lv_label_get_text(s_pct), txt) != 0) lv_label_set_text(s_pct, txt);
-        lv_obj_remove_flag(s_pct, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(s_pct, LV_OBJ_FLAG_HIDDEN);
-    }
+    char txt[8];
+    if (b.charging) snprintf(txt, sizeof(txt), "Chrg");
+    else if (b.charged) snprintf(txt, sizeof(txt), "Full");
+    else snprintf(txt, sizeof(txt), "%d%%", b.percent);
+    if (strcmp(lv_label_get_text(s_pct), txt) != 0) lv_label_set_text(s_pct, txt);
 }
 
 void status_build(lv_obj_t *scr)
@@ -106,7 +105,7 @@ void status_build(lv_obj_t *scr)
     s_bolt = lv_line_create(s_batt);
     lv_line_set_points(s_bolt, bolt, 4);
     lv_obj_set_style_line_width(s_bolt, 2, 0);
-    lv_obj_set_style_line_color(s_bolt, COLOR_ACCENT, 0);
+    lv_obj_set_style_line_color(s_bolt, COLOR_OK, 0);
     lv_obj_set_style_line_rounded(s_bolt, true, 0);
     lv_obj_align(s_bolt, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(s_bolt, LV_OBJ_FLAG_HIDDEN);
@@ -117,6 +116,10 @@ void status_build(lv_obj_t *scr)
     lv_obj_set_style_bg_color(s_nub, COLOR_TEXT, 0);
     lv_obj_set_style_bg_opa(s_nub, LV_OPA_COVER, 0);
 
-    s_pct = ui_label(row, &lv_font_montserrat_14, COLOR_TEXT, 0);
+    // Fixed width (fits "100%"), left-aligned, so switching between "72%", "Chrg" and "Full"
+    // never shifts the row.
+    s_pct = ui_label(row, &lv_font_montserrat_14, COLOR_TEXT, PCT_W);
+    lv_obj_set_style_text_align(s_pct, LV_TEXT_ALIGN_LEFT, 0);
+    lv_label_set_long_mode(s_pct, LV_LABEL_LONG_CLIP);
     lv_label_set_text(s_pct, "");
 }

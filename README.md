@@ -30,9 +30,9 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
 - **Now Playing:** cover art backdrop, two side arcs (right: chapter progress, drag to scrub;
   left: volume, drag to set), ±30 s and previous/next chapter. When nothing is loaded it offers your most recent book to
   resume.
-- **Status row:** battery (on battery: an icon filled to the level plus the percentage; charging:
-  an orange outline with a bolt inside; charged: solid green), Wi-Fi, and Bluetooth (not enabled
-  yet, so it always shows as off).
+- **Status row:** battery (on battery: an icon filled to the level and the percentage; charging:
+  a green outline with a bolt inside and "Chrg"; charged: solid green and "Full"), Wi-Fi, and
+  Bluetooth (not enabled yet, so it always shows as off).
 - **Book details** (long-press any book, or tap the title on Now Playing): play, and download to /
   remove from the SD card.
 - **SD card (optional):** caches the library and cover art for instant start-up and offline
