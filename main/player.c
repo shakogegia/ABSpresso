@@ -443,6 +443,51 @@ static void update_status(void)
     xSemaphoreGive(s_lock);
 }
 
+/* ---------- server updates (sync worker) ---------- */
+
+// Progress syncs and session closes are network calls that can take a while; the control task
+// must stay free to react to taps, so it queues them here and a worker sends them in order.
+typedef enum { JOB_SYNC, JOB_CLOSE, JOB_PATCH } job_type_t;
+
+typedef struct {
+    job_type_t type;
+    char session[40];
+    char item[40];
+    double position, listened, duration;
+    bool finished;
+} sync_job_t;
+
+static QueueHandle_t s_jobs;
+
+static void queue_job(const sync_job_t *job)
+{
+    if (xQueueSend(s_jobs, job, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "sync queue full, dropping an update");
+    }
+}
+
+static void sync_worker(void *arg)
+{
+    sync_job_t j;
+    for (;;) {
+        xQueueReceive(s_jobs, &j, portMAX_DELAY);
+        switch (j.type) {
+        case JOB_SYNC:
+            abs_sync_session(j.session, j.position, j.listened, j.duration);
+            break;
+        case JOB_CLOSE:
+            abs_close_session(j.session, j.position, j.listened);
+            break;
+        case JOB_PATCH:
+            // Downloaded books: the local copy is already saved as pending; clear that once sent.
+            if (wifi_is_connected() && abs_patch_progress(j.item, j.position, j.duration, j.finished) == ESP_OK) {
+                download_set_progress(j.item, j.position, false);
+            }
+            break;
+        }
+    }
+}
+
 static void sync_progress(bool force)
 {
 #ifdef PLAYER_NO_SYNC
@@ -453,19 +498,18 @@ static void sync_progress(bool force)
     int64_t now = esp_timer_get_time();
     if (!force && now - s_last_sync_us < SYNC_INTERVAL_US) return;
     s_last_sync_us = now;
+    sync_job_t job = {.position = current_position(), .listened = s_listen_since_sync, .duration = s_session.duration};
     if (s_local) {
         // Downloads: save locally first (works offline), then tell the server if we can.
-        const double pos = current_position();
-        download_set_progress(s_status.item_id, pos, true);
-        if (wifi_is_connected() && abs_patch_progress(s_status.item_id, pos, s_session.duration, false) == ESP_OK) {
-            download_set_progress(s_status.item_id, pos, false);
-        }
-        s_listen_since_sync = 0;
-        return;
+        download_set_progress(s_status.item_id, job.position, true);
+        job.type = JOB_PATCH;
+        strlcpy(job.item, s_status.item_id, sizeof(job.item));
+    } else {
+        job.type = JOB_SYNC;
+        strlcpy(job.session, s_session.id, sizeof(job.session));
     }
-    if (abs_sync_session(s_session.id, current_position(), s_listen_since_sync, s_session.duration) == ESP_OK) {
-        s_listen_since_sync = 0;
-    }
+    queue_job(&job);
+    s_listen_since_sync = 0;
 }
 
 static void close_session(void)
@@ -475,7 +519,9 @@ static void close_session(void)
     if (s_local) {
         sync_progress(true);
     } else {
-        abs_close_session(s_session.id, current_position(), s_listen_since_sync);
+        sync_job_t job = {.type = JOB_CLOSE, .position = current_position(), .listened = s_listen_since_sync};
+        strlcpy(job.session, s_session.id, sizeof(job.session));
+        queue_job(&job);
     }
     abs_free_session(&s_session);
     s_have_session = false;
@@ -654,9 +700,10 @@ static void control_task(void *arg)
             const bool local = s_local;
             const double duration = s_session.duration;
             close_session();
-            if (local && wifi_is_connected() &&
-                abs_patch_progress(s_status.item_id, duration, duration, true) == ESP_OK) {
-                download_set_progress(s_status.item_id, duration, false);
+            if (local) {
+                sync_job_t job = {.type = JOB_PATCH, .position = duration, .duration = duration, .finished = true};
+                strlcpy(job.item, s_status.item_id, sizeof(job.item));
+                queue_job(&job);
             }
         }
     }
@@ -692,7 +739,10 @@ void player_init(void)
     // Network on core 0 with Wi-Fi; decoding on core 1 above LVGL so audio never starves.
     xTaskCreatePinnedToCore(fetch_task, "abs_fetch", 8192, NULL, 5, &s_fetch_task, 0);
     xTaskCreatePinnedToCore(decode_task, "abs_decode", 16384, NULL, 6, &s_decode_task, 1);
+    s_jobs = xQueueCreate(8, sizeof(sync_job_t));
     xTaskCreatePinnedToCore(control_task, "abs_ctrl", 8192, NULL, 4, NULL, 0);
+    // Stack in PSRAM: network and SD work only, never the internal flash.
+    xTaskCreatePinnedToCoreWithCaps(sync_worker, "abs_sync", 8192, NULL, 3, NULL, 0, MALLOC_CAP_SPIRAM);
 }
 
 static void post(cmd_type_t type, double arg)

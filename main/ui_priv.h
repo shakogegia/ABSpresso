@@ -13,9 +13,10 @@
 #define COLOR_TEXT   lv_color_hex(0xF2F2F2)
 #define COLOR_MUTED  lv_color_hex(0x8C96A0)
 
-// Touch layout rule: rings (Now Playing's progress ring, Library's A-Z ring) claim every touch at
-// radius >= ~166 px from the screen centre. Keep tappable things' bounding boxes inside radius
-// 160, and round controls visually inside ~150, so they never sit under a ring.
+// Touch layout rule: the arcs claim touches from their (widened) inner edge outwards, within their
+// angles: Now Playing's side arcs from ~150 px from the screen centre, the Library's A-Z ring from
+// ~160 px. Keep tappable things' bounding boxes inside those radii where they share angles with
+// an arc, and inside ~160 elsewhere.
 
 // The dock spans y 39..77; pages start below it.
 #define DOCK_Y   39

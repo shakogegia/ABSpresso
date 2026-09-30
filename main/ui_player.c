@@ -244,8 +244,11 @@ static lv_obj_t *side_arc(lv_obj_t *page, int start, int end, int range, lv_even
     lv_obj_set_style_bg_color(a, COLOR_ACCENT, LV_PART_KNOB);
     lv_obj_set_style_pad_all(a, 4, LV_PART_KNOB);
     lv_obj_add_event_cb(a, cb, LV_EVENT_ALL, NULL);
-    // Only the arc itself should grab touches, not the whole square it sits in.
+    // Only the arc should grab touches, not the whole square it sits in. A thin arc at the rim
+    // leaves a touch band only ~12 px wide where the panel is least sensitive, so widen it inwards
+    // (the zone then starts ~150 px from the centre; controls stay inside that, see ui_priv.h).
     lv_obj_add_flag(a, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_set_ext_click_area(a, 18);
     return a;
 }
 
@@ -258,14 +261,14 @@ void playing_build(lv_obj_t *page)
 
     // Two side arcs, sized like the Library's A-Z ring: progress on the right (fills from the top,
     // drag to scrub the chapter) and volume on the left (fills from the bottom).
-    s_arc = side_arc(page, 300, 60, 1000, on_arc_event);
-    s_vol_arc = side_arc(page, 120, 240, 100, on_volume_arc);
+    s_arc = side_arc(page, 305, 55, 1000, on_arc_event);
+    s_vol_arc = side_arc(page, 125, 235, 100, on_volume_arc);
     lv_obj_t *vol_icon = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 0);
     lv_label_set_text(vol_icon, LV_SYMBOL_VOLUME_MAX);
     lv_obj_align(vol_icon, LV_ALIGN_CENTER, -146, 0);
 
     // Everything tappable stays inside radius ~150 so it never sits under the ring (ui_priv.h).
-    s_title = ui_label(page, &lv_font_montserrat_20, COLOR_TEXT, 230);
+    s_title = ui_label(page, &lv_font_montserrat_20, COLOR_TEXT, 200);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -90);
     lv_obj_add_flag(s_title, LV_OBJ_FLAG_CLICKABLE);

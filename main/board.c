@@ -247,7 +247,11 @@ static esp_err_t touch_init(esp_lcd_touch_handle_t *out_tp)
         .x_max = BOARD_LCD_H_RES,
         .y_max = BOARD_LCD_V_RES,
         .rst_gpio_num = GPIO_NUM_NC,
-        .int_gpio_num = PIN_TOUCH_INT,
+        // No interrupt pin: with one, esp_lvgl_port switches LVGL to event-driven input and only
+        // reads the controller when it interrupts. The CST816 doesn't reliably interrupt on
+        // release or slow drags, so presses stuck and drags were missed. Polling every refresh
+        // period is reliable and cheap.
+        .int_gpio_num = GPIO_NUM_NC,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_cst816s(io, &tp_cfg, out_tp), TAG, "touch");
 
@@ -261,7 +265,24 @@ static esp_err_t touch_init(esp_lcd_touch_handle_t *out_tp)
     } else {
         ESP_LOGI(TAG, "touch MotionMask set to %02x", readback);
     }
+    // Stay awake: asleep, the controller ignores I2C, and we poll it (no interrupt pin).
+    uint8_t no_sleep = 0x01;
+    esp_lcd_panel_io_tx_param(io, 0xFE, &no_sleep, 1);
     return ESP_OK;
+}
+
+static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    esp_lcd_touch_handle_t tp = lv_indev_get_user_data(indev);
+    esp_lcd_touch_point_data_t pt;
+    uint8_t n = 0;
+    if (esp_lcd_touch_read_data(tp) == ESP_OK && esp_lcd_touch_get_data(tp, &pt, &n, 1) == ESP_OK && n > 0) {
+        data->point.x = pt.x;
+        data->point.y = pt.y;
+        data->state = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
 }
 
 esp_err_t board_display_init(lv_display_t **out_disp)
@@ -297,8 +318,15 @@ esp_err_t board_display_init(lv_display_t **out_disp)
 
     esp_lcd_touch_handle_t tp = NULL;
     if (touch_init(&tp) == ESP_OK) {
-        const lvgl_port_touch_cfg_t touch_cfg = {.disp = disp, .handle = tp};
-        lvgl_port_add_touch(&touch_cfg);
+        // Our own polled input device rather than lvgl_port_add_touch(): that one aborts on any
+        // failed I2C read, where a missed read should just count as "not touched".
+        lvgl_port_lock(0);
+        lv_indev_t *indev = lv_indev_create();
+        lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+        lv_indev_set_read_cb(indev, touch_read);
+        lv_indev_set_user_data(indev, tp);
+        lv_indev_set_display(indev, disp);
+        lvgl_port_unlock();
     } else {
         ESP_LOGE(TAG, "Touch init failed; continuing without touch");
     }

@@ -5,6 +5,8 @@
 #include <string.h>
 #include <strings.h>
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
@@ -21,6 +23,8 @@ static const char *TAG = "abs";
 static char s_auth[600];
 static char s_device_id[24];
 static char s_library_name[64];
+static SemaphoreHandle_t s_sync_lock;           // see sync_request()
+static esp_http_client_handle_t s_sync_conn;
 static char s_device_id_dl[28];
 struct abs_stream {
     esp_http_client_handle_t client;
@@ -42,6 +46,7 @@ static char *psram_strdup(const char *s)
 
 void abs_api_init(void)
 {
+    s_sync_lock = xSemaphoreCreateMutex();
     cJSON_Hooks hooks = {.malloc_fn = psram_malloc, .free_fn = free};
     cJSON_InitHooks(&hooks);
     snprintf(s_auth, sizeof(s_auth), "Bearer %s", ABS_TOKEN);
@@ -160,6 +165,17 @@ done:
 static int request(esp_http_client_method_t method, const char *path, const char *body, char **out)
 {
     return request_len(method, path, body, out, NULL, NULL);
+}
+
+// Progress sync, session close and progress PATCH are small and frequent: they share one kept-open
+// connection (saving a multi-second TLS handshake each time), serialised because several tasks
+// may call them.
+static int sync_request(esp_http_client_method_t method, const char *path, const char *body)
+{
+    xSemaphoreTake(s_sync_lock, portMAX_DELAY);
+    int status = request_len(method, path, body, NULL, NULL, &s_sync_conn);
+    xSemaphoreGive(s_sync_lock);
+    return status;
 }
 
 static const char *json_str(const cJSON *obj, const char *key)
@@ -442,7 +458,7 @@ esp_err_t abs_patch_progress(const char *item_id, double current_time, double du
     snprintf(path, sizeof(path), "/api/me/progress/%s", item_id);
     snprintf(body, sizeof(body), "{\"currentTime\":%.2f,\"duration\":%.2f,\"progress\":%.5f,\"isFinished\":%s}",
              current_time, duration, duration > 0 ? current_time / duration : 0, finished ? "true" : "false");
-    return request(HTTP_METHOD_PATCH, path, body, NULL) == 200 ? ESP_OK : ESP_FAIL;
+    return sync_request(HTTP_METHOD_PATCH, path, body) == 200 ? ESP_OK : ESP_FAIL;
 }
 
 void abs_free_books(abs_book_t *books, int count)
@@ -528,7 +544,7 @@ esp_err_t abs_sync_session(const char *session_id, double current_time, double t
     snprintf(path, sizeof(path), "/api/session/%s/sync", session_id);
     snprintf(body, sizeof(body), "{\"currentTime\":%.2f,\"timeListening\":%.2f,\"duration\":%.2f}",
              current_time, time_listening, duration);
-    return request(HTTP_METHOD_POST, path, body, NULL) == 200 ? ESP_OK : ESP_FAIL;
+    return sync_request(HTTP_METHOD_POST, path, body) == 200 ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t abs_close_session(const char *session_id, double current_time, double time_listening)
@@ -541,7 +557,7 @@ esp_err_t abs_close_session(const char *session_id, double current_time, double 
         // Nothing was played; don't let the close create or move a progress record.
         strcpy(body, "{}");
     }
-    return request(HTTP_METHOD_POST, path, body, NULL) == 200 ? ESP_OK : ESP_FAIL;
+    return sync_request(HTTP_METHOD_POST, path, body) == 200 ? ESP_OK : ESP_FAIL;
 }
 
 abs_stream_t *abs_stream_create(void)

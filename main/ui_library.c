@@ -252,9 +252,9 @@ void library_build(lv_obj_t *page)
     lv_obj_add_event_cb(s_authors, on_list_scroll, LV_EVENT_SCROLL, NULL);
     lv_obj_add_event_cb(s_author_books, on_list_scroll, LV_EVENT_SCROLL, NULL);
 
-    // Same place and card size as Home; clipped to 268 px so the peeking neighbours stay clear of
-    // the ring.
-    const carousel_cfg_t cfg = {.y = PAGE_CAROUSEL_Y, .x = 0, .width = 268, .title_w = 240, .sub_w = 230};
+    // Same place and card size as Home; clipped to 256 px so the peeking neighbours stay clear of
+    // the ring's touch zone.
+    const carousel_cfg_t cfg = {.y = PAGE_CAROUSEL_Y, .x = 0, .width = 256, .title_w = 240, .sub_w = 230};
     s_carousel = carousel_create(page, &cfg);
 
     s_settings = lv_obj_create(page);
@@ -279,8 +279,10 @@ void library_build(lv_obj_t *page)
     lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(s_ring, COLOR_ACCENT, LV_PART_KNOB);
     lv_obj_set_style_pad_all(s_ring, 4, LV_PART_KNOB);
-    // Only the ring itself should take touches, not the square it sits in.
+    // Only the ring itself should take touches, not the square it sits in; widened inwards a
+    // little so it isn't a thin band at the very edge of the glass.
     lv_obj_add_flag(s_ring, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_set_ext_click_area(s_ring, 8);
     lv_obj_add_event_cb(s_ring, on_ring, LV_EVENT_ALL, NULL);
 
     s_bubble = lv_obj_create(page);

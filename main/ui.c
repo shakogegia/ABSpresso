@@ -237,8 +237,63 @@ static bool rebuild_downloaded(void)
     return changed;
 }
 
+#ifdef LAYOUT_AUDIT
+#include <math.h>
+// Reports tappable objects whose (parent-clipped) bounds reach an arc's touch zone.
+typedef struct { float r, lo, hi; } zone_t;  // radius from which the zone starts; angle range (deg)
+static void audit(lv_obj_t *o, const char *page, const zone_t *z, int nz, const lv_area_t *clip)
+{
+    uint32_t n = lv_obj_get_child_count(o);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *c = lv_obj_get_child(o, i);
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN) || lv_obj_check_type(c, &lv_arc_class)) continue;
+        lv_area_t a, cl;
+        lv_obj_get_coords(c, &a);
+        cl.x1 = LV_MAX(a.x1, clip->x1);
+        cl.y1 = LV_MAX(a.y1, clip->y1);
+        cl.x2 = LV_MIN(a.x2, clip->x2);
+        cl.y2 = LV_MIN(a.y2, clip->y2);
+        if (cl.x1 > cl.x2 || cl.y1 > cl.y2) continue;
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_CLICKABLE) && c != s_pages[0] && c != s_pages[1] && c != s_pages[2]) {
+            int xs[2] = {cl.x1 - 180, cl.x2 - 180}, ys[2] = {cl.y1 - 180, cl.y2 - 180};
+            for (int k = 0; k < 4; k++) {
+                float x = xs[k & 1], y = ys[k >> 1], r = sqrtf(x * x + y * y), ang = atan2f(y, x) * 57.2958f;
+                bool hit = false;
+                for (int zi = 0; zi < nz; zi++) {
+                    float lo = z[zi].lo, hi = z[zi].hi, a2 = ang;
+                    if (lo > 180 && a2 < 0) a2 += 360;
+                    if (r > z[zi].r && a2 >= lo && a2 <= hi) hit = true;
+                }
+                if (hit) {
+                    printf("AUDIT %s: obj (%d,%d)-(%d,%d) corner r=%.0f ang=%.0f\n", page, (int)cl.x1, (int)cl.y1,
+                           (int)cl.x2, (int)cl.y2, r, ang);
+                    break;
+                }
+            }
+        }
+        audit(c, page, z, nz, &cl);
+    }
+}
+#endif
+
 static void refresh_timer(lv_timer_t *t)
 {
+#ifdef LAYOUT_AUDIT
+    static int tick;
+    if (g_book_count && ++tick == 8) {
+        const lv_area_t full = {0, 0, 359, 359};
+        const zone_t lib[] = {{160, -66, 36}};
+        const zone_t np[] = {{150, -61, 61}, {150, 119, 241}};
+        for (int p = 0; p < PAGE_COUNT; p++) {
+            ui_show_page(p);
+            lv_obj_update_layout(s_scr);
+            if (p == PAGE_LIBRARY) audit(s_scr, "library", lib, 1, &full);
+            if (p == PAGE_PLAYER) audit(s_scr, "player", np, 2, &full);
+        }
+        ui_show_page(PAGE_HOME);
+        printf("AUDIT done\n");
+    }
+#endif
     static uint32_t dl_gen;
     if (g_book_count && download_generation() != dl_gen) {
         dl_gen = download_generation();
