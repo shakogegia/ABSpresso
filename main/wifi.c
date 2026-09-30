@@ -71,9 +71,18 @@ bool wifi_is_connected(void)
 
 esp_err_t wifi_start_ap(const char *ssid, const char *password)
 {
+    // Share the home network's channel when we're on it: in AP+STA mode the radio can only be on
+    // one channel, and a setup network that hops channels drops the phone.
+    uint8_t channel = 1;
+    wifi_ap_record_t home;
+    if (wifi_is_connected() && esp_wifi_sta_get_ap_info(&home) == ESP_OK) channel = home.primary;
+    // Each reconnect attempt scans every channel (taking the setup network off the air), so only
+    // keep reconnecting if we're already connected.
+    s_auto_reconnect = wifi_is_connected();
+    if (!s_auto_reconnect) esp_wifi_disconnect();
     wifi_config_t ap = {
         .ap = {
-            .channel = 1,
+            .channel = channel,
             .max_connection = 2,
             .authmode = WIFI_AUTH_WPA2_PSK,
         },
@@ -86,7 +95,7 @@ esp_err_t wifi_start_ap(const char *ssid, const char *password)
     if (err == ESP_OK) err = esp_wifi_set_config(WIFI_IF_AP, &ap);
     // Full power while setting up: modem sleep makes the setup page sluggish.
     esp_wifi_set_ps(WIFI_PS_NONE);
-    ESP_LOGI(TAG, "setup network '%s' up: %s", ssid, esp_err_to_name(err));
+    ESP_LOGI(TAG, "setup network '%s' up on channel %d: %s", ssid, channel, esp_err_to_name(err));
     return err;
 }
 
@@ -95,17 +104,31 @@ void wifi_stop_ap(void)
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     s_auto_reconnect = true;
-    if (!wifi_is_connected() && config_get()->wifi_ssid[0]) esp_wifi_connect();
+    // A failed test may have left the station set up for another network: go back to ours.
+    wifi_config_t cur = {0}, want = {0};
+    esp_wifi_get_config(WIFI_IF_STA, &cur);
+    strlcpy((char *)want.sta.ssid, config_get()->wifi_ssid, sizeof(want.sta.ssid));
+    strlcpy((char *)want.sta.password, config_get()->wifi_pass, sizeof(want.sta.password));
+    if (strcmp((char *)cur.sta.ssid, (char *)want.sta.ssid) != 0 ||
+        strcmp((char *)cur.sta.password, (char *)want.sta.password) != 0) {
+        esp_wifi_disconnect();
+        esp_wifi_set_config(WIFI_IF_STA, &want);
+        xEventGroupClearBits(s_events, BIT_CONNECTED);
+    }
+    if (!wifi_is_connected() && want.sta.ssid[0]) esp_wifi_connect();
 }
 
 int wifi_scan(wifi_ap_record_t *out, int max)
 {
     // A station that keeps retrying a network blocks scans, so stop that while scanning.
+    const bool was = s_auto_reconnect;
     s_auto_reconnect = false;
     if (!wifi_is_connected()) esp_wifi_disconnect();
     const wifi_scan_config_t sc = {.show_hidden = false};
     uint16_t n = max;
     if (esp_wifi_scan_start(&sc, true) != ESP_OK || esp_wifi_scan_get_ap_records(&n, out) != ESP_OK) n = 0;
+    s_auto_reconnect = was;
+    if (was && !wifi_is_connected()) esp_wifi_connect();
     return n;
 }
 

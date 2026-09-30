@@ -35,6 +35,13 @@ static SemaphoreHandle_t s_lock;
 static char s_message[160] = "Waiting for your phone or laptop";
 static bool s_busy;
 static cJSON *s_pending;  // the submitted settings, handed to the apply task
+static volatile bool s_bring_up;  // the setup task should scan, then start the access point
+
+// Nearby networks, scanned once before the setup network starts: scanning takes the radio off
+// the setup network's channel for seconds, which drops the phone that asked for it.
+#define MAX_SCAN 20
+static wifi_ap_record_t *s_scan;
+static volatile int s_scan_count = -1;  // -1 until the scan finishes
 
 static void set_status(bool busy, const char *fmt, ...)
 {
@@ -135,8 +142,8 @@ static esp_err_t on_config(httpd_req_t *req)
 
 static esp_err_t on_scan(httpd_req_t *req)
 {
-    wifi_ap_record_t *aps = heap_caps_calloc(20, sizeof(wifi_ap_record_t), MALLOC_CAP_SPIRAM);
-    int n = aps ? wifi_scan(aps, 20) : 0;
+    const wifi_ap_record_t *aps = s_scan;
+    const int n = s_scan_count;
     cJSON *arr = cJSON_CreateArray();
     for (int i = 0; i < n; i++) {
         cJSON *o = cJSON_CreateObject();
@@ -145,7 +152,6 @@ static esp_err_t on_scan(httpd_req_t *req)
         cJSON_AddBoolToObject(o, "secure", aps[i].authmode != WIFI_AUTH_OPEN);
         cJSON_AddItemToArray(arr, o);
     }
-    free(aps);
     return send_json(req, arr);
 }
 
@@ -223,8 +229,10 @@ static void apply(const cJSON *req)
     }
     const bool same_net = strcmp(ssid, c->wifi_ssid) == 0;
     const char *use_pass = (wpass[0] || !same_net) ? wpass : c->wifi_pass;
-    set_status(true, "Connecting to %s...", ssid);
-    if (!wifi_try_connect(ssid, use_pass, 20000)) {
+    // Already on that network with those details: no need to test (and hop channels).
+    const bool unchanged = same_net && strcmp(use_pass, c->wifi_pass) == 0 && wifi_is_connected();
+    if (!unchanged) set_status(true, "Connecting to %s...", ssid);
+    if (!unchanged && !wifi_try_connect(ssid, use_pass, 20000)) {
         set_status(false, "Couldn't join %s. Check the network and password.", ssid);
         goto out;
     }
@@ -303,6 +311,14 @@ static void apply_task(void *arg)
 {
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (s_bring_up) {
+            s_bring_up = false;
+            if (!s_scan) s_scan = heap_caps_calloc(MAX_SCAN, sizeof(wifi_ap_record_t), MALLOC_CAP_SPIRAM);
+            s_scan_count = s_scan ? wifi_scan(s_scan, MAX_SCAN) : 0;
+            ESP_LOGI(TAG, "%d networks nearby", s_scan_count);
+            if (wifi_start_ap(s_ssid, s_pass) == ESP_OK) set_status(false, "Waiting for your phone or laptop");
+            else set_status(false, "Couldn't start the setup network.");
+        }
         xSemaphoreTake(s_lock, portMAX_DELAY);
         cJSON *req = s_pending;
         s_pending = NULL;
@@ -322,14 +338,18 @@ void portal_start(void)
     esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
     snprintf(s_ssid, sizeof(s_ssid), "ABS-Player-%02X%02X", mac[4], mac[5]);
     snprintf(s_pass, sizeof(s_pass), "%08lu", (unsigned long)(esp_random() % 100000000UL));
-    if (wifi_start_ap(s_ssid, s_pass) != ESP_OK) return;
-    set_status(false, "Waiting for your phone or laptop");
-
-    s_dns_stop = false;
-    xTaskCreatePinnedToCoreWithCaps(dns_task, "dns", 4096, NULL, 3, &s_dns_task, 0, MALLOC_CAP_SPIRAM);
+    // The setup task scans for networks first, then brings the access point up (a scan takes
+    // seconds, so keep it off the caller, which holds the UI lock).
+    set_status(true, "Starting the setup network...");
+    s_scan_count = -1;
+    s_bring_up = true;
     if (!s_apply_task) {
         xTaskCreatePinnedToCoreWithCaps(apply_task, "setup", 8192, NULL, 3, &s_apply_task, 0, MALLOC_CAP_SPIRAM);
     }
+    xTaskNotifyGive(s_apply_task);
+
+    s_dns_stop = false;
+    xTaskCreatePinnedToCoreWithCaps(dns_task, "dns", 4096, NULL, 3, &s_dns_task, 0, MALLOC_CAP_SPIRAM);
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;  // internal RAM is scarce
