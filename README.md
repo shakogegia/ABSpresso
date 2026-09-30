@@ -150,7 +150,11 @@ server's older value.
 main/
   main.c           startup: display, Wi-Fi, library load, refresh loop
   board.c/.h       hardware bring-up: I2C, expander, QSPI LCD, touch, backlight, I2S audio
-  wifi.c/.h        station mode using secrets.h
+  wifi.c/.h        station mode, plus the setup access point, scan and test-join
+  config.c/.h      saved settings (Wi-Fi, server, sign-in tokens) in NVS; secrets.h gives defaults
+  portal.c/.h      setup portal: access point, DNS catch-all, web server, apply-and-restart
+  portal_page.h    the setup web page (self-contained HTML/JS)
+  ui_setup.c       on-screen setup: QR code to join, progress of a save
   abs_api.c/.h     Audiobookshelf REST client (library, progress, sessions, covers, HLS segments)
   player.c/.h      streaming player: fetch / decode / control tasks
   catalog.c/.h     selected library, per-library SD cache, loading from cache or server
@@ -176,13 +180,14 @@ Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/) **v5.5** (devel
 Managed components (LVGL 9.3, esp_lvgl_port, ST77916/CST816S drivers, esp_audio_codec, esp_jpeg)
 are fetched automatically on the first build.
 
-1. Create your secrets file (it is git-ignored):
+1. *(Optional)* Create a secrets file (it is git-ignored). Without one, the device starts in
+   setup mode and you configure it from a phone instead (see [Setup portal](#setup-portal)).
 
    ```sh
    cp main/secrets.h.example main/secrets.h
    ```
 
-   and fill in:
+   and fill in (these become the defaults until something is saved from the setup portal):
 
    | Define | Value |
    | --- | --- |
@@ -260,13 +265,35 @@ python3 tools/capture_to_media.py serial.log docs/media   # needs ffmpeg
 Frames named `<name>_NNN` become `<name>.gif` (using each frame's hold time); the rest become PNGs
 masked to the round panel. Note that the capture shows your own library's titles and covers.
 
+## Setup portal
+
+With no saved configuration, or from **Settings → Wi-Fi & login**, the device starts its own
+Wi-Fi network and shows how to reach it:
+
+<p align="center"><img src="docs/media/setup.png" width="240" alt="Setup screen with QR code"></p>
+
+1. Scan the QR code with a phone camera (or join `ABS-Player-XXXX` with the password shown).
+   The network uses WPA2 with a fresh random password each time.
+2. The setup page usually opens by itself (captive portal); otherwise browse to
+   `http://192.168.4.1`.
+3. Pick your Wi-Fi network, enter the server address, and sign in with your
+   **Audiobookshelf username and password** (no API key needed) or paste an API key.
+   Device preferences are on the same page: brightness, screen-off and sleep timers, skip
+   back/forward lengths, and 180° rotation.
+4. **Save & connect** tests the Wi-Fi join and the sign-in first and reports any problem on the
+   page and the screen. Nothing is saved until both work. Then it saves and restarts.
+
+Username sign-in stores the session's access and refresh tokens (never your password). The
+device renews the access token when the server rejects it, and asks you to sign in again if the
+refresh token has expired too. Blank password fields keep the saved Wi-Fi password or sign-in.
+
 ## Known limitations
 
 - Fonts cover basic Latin only, so accented characters in titles don't render.
 - One cover format (JPEG with unusual 1×2 chroma subsampling) isn't supported by the ROM decoder
   and falls back to a title card.
-- No screen timeout or sleep yet; the first library load and first cover take a few seconds
-  (TLS handshakes). An SD-card cache for covers and the library is a planned improvement.
+- The first library load and first cover take a few seconds (TLS handshakes) when nothing is
+  cached on the SD card yet.
 - Podcast episodes can't be downloaded yet (books can). Very long feeds show their first 150
   episodes (in-progress and newest).
 - Listening to a downloaded book updates your progress but isn't recorded as a listening session

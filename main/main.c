@@ -13,6 +13,8 @@
 #include "battery.h"
 #include "power.h"
 #include "catalog.h"
+#include "config.h"
+#include "portal.h"
 #include "download.h"
 #include "esp_timer.h"
 #include "ui.h"
@@ -20,6 +22,7 @@
 
 static void show_message(const char *msg)
 {
+    if (portal_active()) return;  // the setup screen is showing
     lvgl_port_lock(0);
     ui_show_message(msg);
     lvgl_port_unlock();
@@ -35,6 +38,7 @@ void app_main(void)
         nvs_flash_init();
     }
 
+    config_init();  // before anything reads settings (the UI does)
     ESP_ERROR_CHECK(board_display_init(NULL));
     lvgl_port_lock(0);
     ui_init();
@@ -52,6 +56,12 @@ void app_main(void)
     wifi_start();
 
     catalog_init();
+    if (!config_complete()) {
+        // First run (or settings cleared): straight into setup.
+        lvgl_port_lock(0);
+        ui_setup_show();
+        lvgl_port_unlock();
+    }
     bool cached = catalog_load_cached();
     bool online = false;
     int64_t last_try = -RETRY_US, started = esp_timer_get_time();
@@ -71,9 +81,14 @@ void app_main(void)
                 void ui_capture_start(void);
                 ui_capture_start();
 #endif
+#if defined(PORTAL_TEST) && !defined(UI_CAPTURE)
+                lvgl_port_lock(0);
+                ui_setup_show();
+                lvgl_port_unlock();
+#endif
             }
         } else if (!online && !cached && !wifi_is_connected() && now - started > 15000000LL) {
-            show_message("Still waiting for Wi-Fi...");
+            show_message("Still waiting for Wi-Fi...\nSettings " LV_SYMBOL_RIGHT " Wi-Fi & login to change it.");
         }
 
         char library[40];
@@ -103,6 +118,11 @@ void app_main(void)
                 vTaskDelay(pdMS_TO_TICKS(2000));
                 show_message(NULL);
             }
+        }
+        static bool told;
+        if (abs_signed_out() && !told) {
+            told = true;
+            show_message("Signed out by the server.\nSettings " LV_SYMBOL_RIGHT " Wi-Fi & login to sign in again.");
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }

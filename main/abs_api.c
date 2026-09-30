@@ -12,7 +12,7 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"
-#include "secrets.h"
+#include "config.h"
 
 static const char *TAG = "abs";
 
@@ -20,7 +20,12 @@ static const char *TAG = "abs";
 #define USER_AGENT "abs-esp32/0.1"
 #define DEVICE_NAME "ESP32 ABS Player"
 
-static char s_auth[600];
+// "Bearer <token>", replaced when the access token is refreshed; s_auth_gen counts refreshes.
+static char *s_auth;
+static SemaphoreHandle_t s_auth_lock, s_refresh_lock;
+static volatile uint32_t s_auth_gen;
+static volatile bool s_signed_out;
+static char s_base[128];  // server base URL, no trailing slash
 static char s_device_id[24];
 static char s_library_name[64];
 static SemaphoreHandle_t s_sync_lock;           // see sync_request()
@@ -49,7 +54,13 @@ void abs_api_init(void)
     s_sync_lock = xSemaphoreCreateMutex();
     cJSON_Hooks hooks = {.malloc_fn = psram_malloc, .free_fn = free};
     cJSON_InitHooks(&hooks);
-    snprintf(s_auth, sizeof(s_auth), "Bearer %s", ABS_TOKEN);
+    s_auth_lock = xSemaphoreCreateMutex();
+    s_refresh_lock = xSemaphoreCreateMutex();
+    s_auth = heap_caps_malloc(1100, MALLOC_CAP_SPIRAM);
+    snprintf(s_auth, 1100, "Bearer %s", config_get()->access);
+    strlcpy(s_base, config_get()->server, sizeof(s_base));
+    size_t n = strlen(s_base);
+    if (n && s_base[n - 1] == '/') s_base[n - 1] = 0;
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     snprintf(s_device_id, sizeof(s_device_id), "esp32-%02x%02x%02x%02x%02x%02x",
@@ -60,7 +71,7 @@ void abs_api_init(void)
 static esp_http_client_handle_t new_client(const char *path, esp_http_client_method_t method)
 {
     char url[256];
-    snprintf(url, sizeof(url), "https://%s%s", ABS_SERVER, path);
+    snprintf(url, sizeof(url), "%s%s", s_base, path);
     esp_http_client_config_t cfg = {
         .url = url,
         .method = method,
@@ -71,18 +82,26 @@ static esp_http_client_handle_t new_client(const char *path, esp_http_client_met
         .user_agent = USER_AGENT,
         .keep_alive_enable = true,
     };
-    esp_http_client_handle_t c = esp_http_client_init(&cfg);
-    if (c) {
-        esp_http_client_set_header(c, "Authorization", s_auth);
-    }
-    return c;
+    return esp_http_client_init(&cfg);
 }
+
+// Sets the current Authorization header (tokens can change between requests on a kept connection).
+static uint32_t set_auth(esp_http_client_handle_t c)
+{
+    xSemaphoreTake(s_auth_lock, portMAX_DELAY);
+    esp_http_client_set_header(c, "Authorization", s_auth);
+    uint32_t gen = s_auth_gen;
+    xSemaphoreGive(s_auth_lock);
+    return gen;
+}
+
+static bool try_refresh(uint32_t failed_gen);
 
 // Performs a request and returns the body (NUL-terminated, PSRAM) in *out and its length in *out_len.
 // With `keep`, the connection is reused across calls (skipping a multi-second TLS handshake each
 // time); *keep must only be used from one task. Returns HTTP status or -1.
-static int request_len(esp_http_client_method_t method, const char *path, const char *body, char **out,
-                       size_t *out_len, esp_http_client_handle_t *keep)
+static int request_once(esp_http_client_method_t method, const char *path, const char *body, char **out,
+                        size_t *out_len, esp_http_client_handle_t *keep, uint32_t *gen)
 {
     if (out) *out = NULL;
     if (out_len) *out_len = 0;
@@ -90,7 +109,7 @@ static int request_len(esp_http_client_method_t method, const char *path, const 
     esp_http_client_handle_t c;
     if (reused) {
         char url[256];
-        snprintf(url, sizeof(url), "https://%s%s", ABS_SERVER, path);
+        snprintf(url, sizeof(url), "%s%s", s_base, path);
         c = *keep;
         esp_http_client_set_url(c, url);
         esp_http_client_set_method(c, method);
@@ -98,6 +117,7 @@ static int request_len(esp_http_client_method_t method, const char *path, const 
         c = new_client(path, method);
         if (!c) return -1;
     }
+    *gen = set_auth(c);
     int body_len = body ? strlen(body) : 0;
     if (body) {
         esp_http_client_set_header(c, "Content-Type", "application/json");
@@ -157,7 +177,20 @@ done:
     if (keep) *keep = NULL;
     if (reused && status < 0) {
         // The server probably dropped the idle connection; try once on a fresh one.
-        return request_len(method, path, body, out, out_len, keep);
+        return request_once(method, path, body, out, out_len, keep, gen);
+    }
+    return status;
+}
+
+// A request, retried once with a renewed access token if the server says the token has expired.
+static int request_len(esp_http_client_method_t method, const char *path, const char *body, char **out,
+                       size_t *out_len, esp_http_client_handle_t *keep)
+{
+    uint32_t gen = 0;
+    int status = request_once(method, path, body, out, out_len, keep, &gen);
+    if (status == 401 && try_refresh(gen)) {
+        if (out) free(*out);
+        status = request_once(method, path, body, out, out_len, keep, &gen);
     }
     return status;
 }
@@ -449,7 +482,8 @@ void abs_set_library_name(const char *name)
 
 const char *abs_server(void)
 {
-    return ABS_SERVER;
+    const char *p = strstr(s_base, "://");
+    return p ? p + 3 : s_base;
 }
 
 esp_err_t abs_patch_progress(const char *item_id, double current_time, double duration, bool finished)
@@ -568,13 +602,14 @@ abs_stream_t *abs_stream_create(void)
 int abs_stream_begin(abs_stream_t *st, const char *path)
 {
     char url[256];
-    snprintf(url, sizeof(url), "https://%s%s", ABS_SERVER, path);
+    snprintf(url, sizeof(url), "%s%s", s_base, path);
     if (!st->client) {
         st->client = new_client(path, HTTP_METHOD_GET);
         if (!st->client) return -1;
     } else {
         esp_http_client_set_url(st->client, url);
     }
+    const uint32_t gen = set_auth(st->client);
     esp_err_t err = esp_http_client_open(st->client, 0);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "segment connect failed: %s", esp_err_to_name(err));
@@ -585,7 +620,154 @@ int abs_stream_begin(abs_stream_t *st, const char *path)
         abs_stream_end(st, false);
         return -1;
     }
-    return esp_http_client_get_status_code(st->client);
+    int status = esp_http_client_get_status_code(st->client);
+    if (status == 401 && try_refresh(gen)) {
+        abs_stream_end(st, true);
+        return abs_stream_begin(st, path);
+    }
+    return status;
+}
+
+/* ---------- signing in ---------- */
+
+// A one-off request to any server (for the setup portal, before settings are saved, and for the
+// token refresh itself). Returns the HTTP status, or -1 if the server couldn't be reached.
+static int raw_request(const char *base, esp_http_client_method_t method, const char *path, const char *bearer,
+                       const char *refresh, const char *body, char **out)
+{
+    *out = NULL;
+    char url[256];
+    snprintf(url, sizeof(url), "%s%s", base, path);
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .method = method,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms = 15000,
+        .buffer_size = 4096,
+        .buffer_size_tx = 2048,
+        .user_agent = USER_AGENT,
+    };
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    if (!c) return -1;
+    char *hdr = NULL;
+    if (bearer && bearer[0]) {
+        hdr = heap_caps_malloc(strlen(bearer) + 8, MALLOC_CAP_SPIRAM);
+        sprintf(hdr, "Bearer %s", bearer);
+        esp_http_client_set_header(c, "Authorization", hdr);
+    }
+    if (refresh) esp_http_client_set_header(c, "x-refresh-token", refresh);
+    // Ask for the refresh token in the response body (otherwise it only goes in a cookie).
+    esp_http_client_set_header(c, "x-return-tokens", "true");
+    int len = body ? strlen(body) : 0;
+    if (body) esp_http_client_set_header(c, "Content-Type", "application/json");
+    int status = -1;
+    if (esp_http_client_open(c, len) == ESP_OK && (!len || esp_http_client_write(c, body, len) == len) &&
+        esp_http_client_fetch_headers(c) >= 0) {
+        status = esp_http_client_get_status_code(c);
+        size_t cap = 8192, n = 0;
+        char *buf = psram_malloc(cap);
+        int r;
+        while (buf && (r = esp_http_client_read(c, buf + n, cap - n - 1)) > 0) {
+            n += r;
+            if (cap - n < 1024) {
+                char *nb = heap_caps_realloc(buf, cap * 2, MALLOC_CAP_SPIRAM);
+                if (!nb) break;
+                buf = nb;
+                cap *= 2;
+            }
+        }
+        if (buf) buf[n] = 0;
+        *out = buf;
+    }
+    esp_http_client_cleanup(c);
+    free(hdr);
+    return status;
+}
+
+// Tokens from a /login or /auth/refresh response (user.accessToken / user.refreshToken, or the
+// pre-2.26 user.token).
+static bool parse_tokens(const char *json, char *access, size_t alen, char *refresh, size_t rlen)
+{
+    cJSON *root = json ? cJSON_Parse(json) : NULL;
+    const cJSON *user = cJSON_GetObjectItem(root, "user");
+    const char *a = json_str(user, "accessToken");
+    if (!a) a = json_str(root, "accessToken");
+    if (!a) a = json_str(user, "token");
+    const char *r = json_str(user, "refreshToken");
+    if (!r) r = json_str(root, "refreshToken");
+    if (a) strlcpy(access, a, alen);
+    if (refresh) strlcpy(refresh, r ? r : "", rlen);
+    cJSON_Delete(root);
+    return a != NULL;
+}
+
+static bool try_refresh(uint32_t failed_gen)
+{
+    bool ok = false;
+    xSemaphoreTake(s_refresh_lock, portMAX_DELAY);
+    if (s_auth_gen != failed_gen) {
+        ok = true;  // someone else already renewed it; just retry
+    } else if (config_get()->refresh[0]) {
+        char *body = NULL;
+        char *access = heap_caps_malloc(1024, MALLOC_CAP_SPIRAM), *refresh = heap_caps_malloc(1024, MALLOC_CAP_SPIRAM);
+        int status = raw_request(s_base, HTTP_METHOD_POST, "/auth/refresh", NULL, config_get()->refresh, NULL, &body);
+        if (status == 200 && parse_tokens(body, access, 1024, refresh, 1024)) {
+            config_set_tokens(access, refresh[0] ? refresh : config_get()->refresh);
+            xSemaphoreTake(s_auth_lock, portMAX_DELAY);
+            snprintf(s_auth, 1100, "Bearer %s", access);
+            s_auth_gen++;
+            xSemaphoreGive(s_auth_lock);
+            ESP_LOGI(TAG, "access token renewed");
+            ok = true;
+        } else {
+            ESP_LOGW(TAG, "token refresh failed (%d); sign in again from Settings", status);
+            if (status == 401 || status == 403) s_signed_out = true;
+        }
+        free(body);
+        free(access);
+        free(refresh);
+    } else {
+        s_signed_out = true;  // an API key that the server no longer accepts
+    }
+    xSemaphoreGive(s_refresh_lock);
+    return ok;
+}
+
+bool abs_signed_out(void)
+{
+    return s_signed_out;
+}
+
+abs_auth_result_t abs_login(const char *base, const char *username, const char *password, char *access,
+                            size_t alen, char *refresh, size_t rlen)
+{
+    cJSON *req = cJSON_CreateObject();
+    cJSON_AddStringToObject(req, "username", username);
+    cJSON_AddStringToObject(req, "password", password);
+    char *json = cJSON_PrintUnformatted(req);
+    cJSON_Delete(req);
+    char *body = NULL;
+    int status = raw_request(base, HTTP_METHOD_POST, "/login", NULL, NULL, json, &body);
+    free(json);
+    abs_auth_result_t r = status < 0              ? ABS_AUTH_UNREACHABLE
+                          : status == 401          ? ABS_AUTH_REJECTED
+                          : status != 200          ? ABS_AUTH_ERROR
+                          : parse_tokens(body, access, alen, refresh, rlen) ? ABS_AUTH_OK
+                                                                            : ABS_AUTH_ERROR;
+    ESP_LOGI(TAG, "login to %s as %s: HTTP %d", base, username, status);
+    free(body);
+    return r;
+}
+
+abs_auth_result_t abs_check(const char *base, const char *token)
+{
+    char *body = NULL;
+    int status = raw_request(base, HTTP_METHOD_GET, "/api/me", token, NULL, NULL, &body);
+    free(body);
+    return status < 0 ? ABS_AUTH_UNREACHABLE
+           : status == 401 || status == 403 ? ABS_AUTH_REJECTED
+           : status == 200 ? ABS_AUTH_OK
+                           : ABS_AUTH_ERROR;
 }
 
 int abs_stream_read(abs_stream_t *st, char *buf, int len)

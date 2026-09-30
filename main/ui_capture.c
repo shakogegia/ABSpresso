@@ -126,6 +126,19 @@ static void __attribute__((unused)) capture_task(void *arg)
     lvgl_port_unlock();
     printf("CAPTURE BEGIN\n");
 
+#ifdef PORTAL_TEST
+    locked(show_page, PAGE_LIBRARY);
+    locked(lib_view, 3);  // Settings
+    advance(300);
+    shot("settings", 0);
+    lvgl_port_lock(0);
+    ui_setup_show();
+    lvgl_port_unlock();
+    advance(1500);
+    shot("setup", 0);
+    printf("CAPTURE DONE\n");
+    vTaskDelete(NULL);
+#endif
 #ifdef BATT_DEMO
     extern int g_batt_demo;
     locked(show_page, PAGE_HOME);

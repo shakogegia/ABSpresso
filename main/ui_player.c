@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "config.h"
 #include "cover.h"
 #include "player.h"
 #include "ui_priv.h"
@@ -67,8 +68,15 @@ static void on_title(lv_event_t *e)
     if (i >= 0) ui_sheet_show(i);
 }
 
-static void on_back30(lv_event_t *e) { player_seek_relative(-30); flash_state("-30 s"); }
-static void on_fwd30(lv_event_t *e) { player_seek_relative(30); flash_state("+30 s"); }
+// Skip buttons; how far they jump is a setting (config.h).
+static void on_skip(lv_event_t *e)
+{
+    const int s = (int)(intptr_t)lv_event_get_user_data(e);
+    player_seek_relative(s);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%+d s", s);
+    flash_state(buf);
+}
 static void on_prev_ch(lv_event_t *e) { player_chapter_step(-1); flash_state("Previous chapter"); }
 static void on_next_ch(lv_event_t *e) { player_chapter_step(1); flash_state("Next chapter"); }
 
@@ -289,9 +297,13 @@ void playing_build(lv_obj_t *page)
     lv_obj_set_style_text_color(s_play_label, lv_color_black(), 0);
     lv_obj_align(play, LV_ALIGN_CENTER, 0, 4);
 
-    lv_obj_t *b30 = ui_round_button(page, 60, "-30", &lv_font_montserrat_20, on_back30, NULL);
+    char lbl[8];
+    const int back = config_get()->skip_back_s, fwd = config_get()->skip_fwd_s;
+    snprintf(lbl, sizeof(lbl), "-%d", back);
+    lv_obj_t *b30 = ui_round_button(page, 60, lbl, &lv_font_montserrat_20, on_skip, (void *)(intptr_t)-back);
     lv_obj_align(b30, LV_ALIGN_CENTER, -94, 4);
-    lv_obj_t *f30 = ui_round_button(page, 60, "+30", &lv_font_montserrat_20, on_fwd30, NULL);
+    snprintf(lbl, sizeof(lbl), "+%d", fwd);
+    lv_obj_t *f30 = ui_round_button(page, 60, lbl, &lv_font_montserrat_20, on_skip, (void *)(intptr_t)fwd);
     lv_obj_align(f30, LV_ALIGN_CENTER, 94, 4);
 
     s_time = ui_label(page, &lv_font_montserrat_16, COLOR_TEXT, 200);

@@ -17,10 +17,12 @@
 enum {
     ROW_SERVER, ROW_LIBRARY, ROW_CONTENTS, ROW_UPDATED, ROW_WIFI, ROW_SD,
     ROW_BRIGHT, ROW_SCREEN, ROW_SLEEP, ROW_ROTATE,  // tap to cycle
+    ROW_SETUP,                                      // tap to open the setup portal
     ROW_COUNT
 };
 static const char *const s_keys[ROW_COUNT] = {"Server", "Library", "Contents", "Updated", "Wi-Fi", "SD card",
-                                              "Brightness", "Screen off", "Sleep", "Rotate 180\xc2\xb0"};
+                                              "Brightness", "Screen off", "Sleep", "Rotate 180\xc2\xb0",
+                                              "Wi-Fi & login"};
 
 static bool s_rotated = true;  // default: upside down (how this device is mounted)
 
@@ -59,6 +61,9 @@ static void on_power_row(lv_event_t *e)
     case ROW_BRIGHT: c.brightness = next_choice(BRIGHTNESS, 5, c.brightness); break;
     case ROW_SCREEN: c.screen_off_s = next_choice(SCREEN_OFF_S, 5, c.screen_off_s); break;
     case ROW_SLEEP:  c.sleep_min = next_choice(SLEEP_MIN, 4, c.sleep_min); break;
+    case ROW_SETUP:
+        ui_setup_show();
+        return;
     case ROW_ROTATE:
         apply_rotation(!s_rotated, true);
         settings_refresh();
@@ -220,6 +225,7 @@ void settings_refresh(void)
     else snprintf(buf, sizeof(buf), "after %d min  " LV_SYMBOL_RIGHT, pc.sleep_min);
     set_value(ROW_SLEEP, buf);
     set_value(ROW_ROTATE, s_rotated ? "On  " LV_SYMBOL_RIGHT : "Off  " LV_SYMBOL_RIGHT);
+    set_value(ROW_SETUP, "Set up via phone  " LV_SYMBOL_RIGHT);
 }
 
 void settings_build(lv_obj_t *parent)

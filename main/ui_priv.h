@@ -99,6 +99,12 @@ void settings_refresh(void);
 void libpicker_build(lv_obj_t *scr);
 bool libpicker_visible(void);
 
+/* setup screen (ui_setup.c) */
+void setup_build(lv_obj_t *scr);
+void ui_setup_show(void);
+void ui_setup_refresh(void);
+bool ui_setup_visible(void);
+
 /* status row above the dock (ui_status.c) */
 void status_build(lv_obj_t *scr);
 void status_refresh(void);

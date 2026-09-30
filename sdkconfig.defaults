@@ -57,3 +57,6 @@ CONFIG_PM_ENABLE=y
 # IRAM functions themselves can't be turned off on the S3.)
 # CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP is not set
 # CONFIG_PM_RESTORE_CACHE_TAGMEM_AFTER_LIGHT_SLEEP is not set
+
+# Setup screen QR code
+CONFIG_LV_USE_QRCODE=y

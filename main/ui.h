@@ -25,6 +25,9 @@ void ui_set_libraries(const abs_library_t *libs, int count, const char *selected
 void ui_request_library(const char *library_id);
 bool ui_take_library_request(char *library_id, size_t len);
 
+// Opens the setup screen and portal (Wi-Fi, server, sign-in) for a phone or laptop.
+void ui_setup_show(void);
+
 // Ask the main loop to reload the library.
 void ui_request_refresh(void);
 // True once after a reload was requested. Lock not needed.

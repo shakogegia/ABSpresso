@@ -59,7 +59,18 @@ typedef struct {
     char display_author[96];   // show title for podcasts
 } abs_session_t;
 
+// Uses the server and credential from config.h.
 void abs_api_init(void);
+
+// Signing in (for the setup portal, against a server that isn't saved yet).
+typedef enum { ABS_AUTH_OK, ABS_AUTH_UNREACHABLE, ABS_AUTH_REJECTED, ABS_AUTH_ERROR } abs_auth_result_t;
+// Username/password -> access token (+ refresh token on servers that issue them).
+abs_auth_result_t abs_login(const char *base, const char *username, const char *password, char *access,
+                            size_t alen, char *refresh, size_t rlen);
+// Whether `token` (an API key or access token) is accepted.
+abs_auth_result_t abs_check(const char *base, const char *token);
+// True once the server rejected our credential and it couldn't be renewed.
+bool abs_signed_out(void);
 
 // All libraries on the server (books and podcasts), plus the raw JSON for caching.
 esp_err_t abs_get_libraries(abs_library_t **out, int *count, char **json);

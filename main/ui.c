@@ -310,6 +310,10 @@ static void refresh_timer(lv_timer_t *t)
         return;
     }
     if (libpicker_visible()) return;
+    if (ui_setup_visible()) {
+        ui_setup_refresh();
+        return;
+    }
 
     switch (s_page) {
     case PAGE_HOME:    home_refresh(); break;
@@ -347,6 +351,7 @@ void ui_init(void)
     sheet_build(s_scr);
     episodes_build(s_scr);
     libpicker_build(s_scr);
+    setup_build(s_scr);
     status_build(s_scr);  // last, so it stays above the pages and overlays
 
     s_msg = ui_label(s_scr, &lv_font_montserrat_16, COLOR_MUTED, 240);
