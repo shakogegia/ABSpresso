@@ -125,6 +125,20 @@ static void __attribute__((unused)) capture_task(void *arg)
     lvgl_port_unlock();
     printf("CAPTURE BEGIN\n");
 
+#ifdef BATT_DEMO
+    extern int g_batt_demo;
+    locked(show_page, PAGE_HOME);
+    for (int d = 0; d < 4; d++) {
+        g_batt_demo = d;
+        advance(1100);
+        char name[16];
+        snprintf(name, sizeof(name), "batt_%d", d);
+        shot(name, 0);
+    }
+    g_batt_demo = -1;
+    printf("CAPTURE DONE\n");
+    vTaskDelete(NULL);
+#endif
     // Stills.
     locked(show_sheet, g_continue.count ? g_continue.idx[0] : 0);
     wait_real(2500);

@@ -30,8 +30,9 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
 - **Now Playing:** cover art backdrop, two side arcs (right: chapter progress, drag to scrub;
   left: volume, drag to set), ±30 s and previous/next chapter. When nothing is loaded it offers your most recent book to
   resume.
-- **Status row:** battery level (an icon that fills, with a bolt while charging and "Full" when
-  charged), Wi-Fi and Bluetooth (Bluetooth isn't enabled yet, so it always shows as off).
+- **Status row:** battery (on battery: an icon filled to the level plus the percentage; charging:
+  an orange outline with a bolt inside; charged: solid green), Wi-Fi, and Bluetooth (not enabled
+  yet, so it always shows as off).
 - **Book details** (long-press any book, or tap the title on Now Playing): play, and download to /
   remove from the SD card.
 - **SD card (optional):** caches the library and cover art for instant start-up and offline
@@ -217,7 +218,9 @@ The console is on the board's native USB (USB-Serial/JTAG).
   curve. The charger's status pin only drives its LED and USB power isn't wired to a GPIO, so
   charging is inferred: a USB host on the ESP32's own USB port means external power; otherwise
   the voltage jumping up or down (plug/unplug) or its 3-minute trend decides. A plain wall charger
-  is only detected through the voltage, and the percentage reads a little high while charging.
+  is only detected through the voltage. Full charge is inferred as well: the charger holds ~4.2 V
+  while charging and then stops, leaving the cell flat a little lower, so "charged" appears after
+  about 3 minutes of flat readings on power.
 - **Touch:** the CST816T powers up with continuous swipe tracking disabled (MotionMask `0xEC` =
   0), which breaks gestures. `board.c` sets it to `0x06`.
 - **Display:** panels that report ID `00 02 7F 7F` need Waveshare's alternate ST77916 init
