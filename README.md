@@ -27,8 +27,8 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
 - **Podcasts:** podcast libraries work too. Shows appear like books; tapping one lists its
   episodes (in progress first, then newest), and episodes play, resume and sync progress like
   books.
-- **Now Playing:** cover art backdrop, a chapter-progress ring you can drag to scrub, ±30 s,
-  previous/next chapter and volume. When nothing is loaded it offers your most recent book to
+- **Now Playing:** cover art backdrop, two side arcs (right: chapter progress, drag to scrub;
+  left: volume, drag to set), ±30 s and previous/next chapter. When nothing is loaded it offers your most recent book to
   resume.
 - **Book details** (long-press any book, or tap the title on Now Playing): play, and download to /
   remove from the SD card.

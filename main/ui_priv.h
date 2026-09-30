@@ -89,6 +89,7 @@ bool ui_library_is_podcast(void);
 void episodes_build(lv_obj_t *scr);
 void ui_episodes_show(int book_index);
 void ui_episodes_refresh(void);
+void ui_episodes_hide(void);
 bool ui_episodes_visible(void);
 
 /* settings view inside the Library page (ui_settings.c) */

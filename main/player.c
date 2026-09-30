@@ -44,7 +44,6 @@ typedef enum {
     CMD_SEEK_ABS,
     CMD_CHAPTER,
     CMD_STOP,
-    CMD_VOLUME,
 } cmd_type_t;
 
 typedef struct {
@@ -91,6 +90,9 @@ static bool s_have_session;
 static bool s_local;          // playing a download from the SD card (no server session)
 static double s_book_time;    // server position of the open book, for reopening
 static abs_stream_t *s_net;
+static int64_t s_volume_changed_us;  // when the volume last changed and isn't saved yet (0 = saved)
+#define VOLUME_SAVE_DELAY_US (2 * 1000000LL)
+static void save_volume_if_settled(int64_t now);
 static double s_seg_start_time;
 static double s_listen_since_sync;
 static int64_t s_last_sync_us, s_last_tick_us;
@@ -611,20 +613,6 @@ static void handle(const cmd_t *c)
         set_state(PLAYER_IDLE);
         break;
 
-    case CMD_VOLUME: {
-        int v = (int)c->arg;
-        board_audio_set_volume(v);
-        xSemaphoreTake(s_lock, portMAX_DELAY);
-        s_status.volume = v;
-        xSemaphoreGive(s_lock);
-        nvs_handle_t h;
-        if (nvs_open("player", NVS_READWRITE, &h) == ESP_OK) {
-            nvs_set_u8(h, "volume", v);
-            nvs_commit(h);
-            nvs_close(h);
-        }
-        break;
-    }
     }
 }
 
@@ -639,6 +627,7 @@ static void control_task(void *arg)
         update_status();
 
         int64_t now = esp_timer_get_time();
+        save_volume_if_settled(now);
         xSemaphoreTake(s_lock, portMAX_DELAY);
         player_state_t st = s_status.state;
         xSemaphoreGive(s_lock);
@@ -747,7 +736,29 @@ void player_set_volume(int volume)
 {
     if (volume < 0) volume = 0;
     if (volume > 100) volume = 100;
-    post(CMD_VOLUME, volume);
+    // Applied at once (dragging the volume arc sends many of these); saved later by the control
+    // task once it stops changing, to spare the flash.
+    board_audio_set_volume(volume);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_status.volume = volume;
+    s_volume_changed_us = esp_timer_get_time();
+    xSemaphoreGive(s_lock);
+}
+
+static void save_volume_if_settled(int64_t now)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const bool due = s_volume_changed_us && now - s_volume_changed_us > VOLUME_SAVE_DELAY_US;
+    const int v = s_status.volume;
+    if (due) s_volume_changed_us = 0;
+    xSemaphoreGive(s_lock);
+    if (!due) return;
+    nvs_handle_t h;
+    if (nvs_open("player", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "volume", v);
+        nvs_commit(h);
+        nvs_close(h);
+    }
 }
 
 void player_get_status(player_status_t *out)

@@ -7,9 +7,9 @@
 #include "player.h"
 #include "ui_priv.h"
 
-static lv_obj_t *s_backdrop, *s_arc, *s_title, *s_chapter, *s_state, *s_play_label, *s_time, *s_remaining;
+static lv_obj_t *s_backdrop, *s_arc, *s_vol_arc, *s_title, *s_chapter, *s_state, *s_play_label, *s_time, *s_remaining;
 static const lv_image_dsc_t *s_backdrop_src;
-static bool s_arc_dragging;
+static bool s_arc_dragging, s_vol_dragging;
 static uint32_t s_state_override_until;
 static int s_resume = -1;  // book offered for resume while the player is idle
 
@@ -72,12 +72,18 @@ static void on_fwd30(lv_event_t *e) { player_seek_relative(30); flash_state("+30
 static void on_prev_ch(lv_event_t *e) { player_chapter_step(-1); flash_state("Previous chapter"); }
 static void on_next_ch(lv_event_t *e) { player_chapter_step(1); flash_state("Next chapter"); }
 
-static void on_volume(lv_event_t *e)
+// Left arc: volume, louder towards the top. Applied live while dragging.
+static void on_volume_arc(lv_event_t *e)
 {
-    player_status_t st;
-    player_get_status(&st);
-    int v = st.volume + (int)(intptr_t)lv_event_get_user_data(e);
-    v = v < 0 ? 0 : (v > 100 ? 100 : v);
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_PRESSED) {
+        s_vol_dragging = true;
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        s_vol_dragging = false;
+    } else if (code != LV_EVENT_VALUE_CHANGED) {
+        return;
+    }
+    int v = lv_arc_get_value(s_vol_arc);
     player_set_volume(v);
     char buf[24];
     snprintf(buf, sizeof(buf), LV_SYMBOL_VOLUME_MAX " %d%%", v);
@@ -165,6 +171,7 @@ void playing_refresh(void)
 {
     player_status_t st;
     player_get_status(&st);
+    if (!s_vol_dragging) lv_arc_set_value(s_vol_arc, st.volume);
     if (!player_loaded(&st)) {
         refresh_idle();
         return;
@@ -223,6 +230,25 @@ void playing_prepare(int book_index)
 
 /* ---------- build ---------- */
 
+static lv_obj_t *side_arc(lv_obj_t *page, int start, int end, int range, lv_event_cb_t cb)
+{
+    lv_obj_t *a = lv_arc_create(page);
+    lv_obj_set_size(a, 348, 348);
+    lv_obj_center(a);
+    lv_arc_set_bg_angles(a, start, end);
+    lv_arc_set_range(a, 0, range);
+    lv_obj_set_style_arc_width(a, 6, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(a, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(a, COLOR_CARD, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(a, COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(a, COLOR_ACCENT, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(a, 4, LV_PART_KNOB);
+    lv_obj_add_event_cb(a, cb, LV_EVENT_ALL, NULL);
+    // Only the arc itself should grab touches, not the whole square it sits in.
+    lv_obj_add_flag(a, LV_OBJ_FLAG_ADV_HITTEST);
+    return a;
+}
+
 void playing_build(lv_obj_t *page)
 {
     // Cover art fills the round screen behind everything else (pre-dimmed by the loader).
@@ -230,21 +256,13 @@ void playing_build(lv_obj_t *page)
     lv_obj_center(s_backdrop);
     lv_obj_add_flag(s_backdrop, LV_OBJ_FLAG_HIDDEN);
 
-    s_arc = lv_arc_create(page);
-    lv_obj_set_size(s_arc, 348, 348);
-    lv_obj_center(s_arc);
-    lv_arc_set_rotation(s_arc, 270);
-    lv_arc_set_bg_angles(s_arc, 0, 360);
-    lv_arc_set_range(s_arc, 0, 1000);
-    lv_obj_set_style_arc_width(s_arc, 8, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(s_arc, 8, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(s_arc, COLOR_CARD, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(s_arc, COLOR_ACCENT, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_arc, COLOR_ACCENT, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(s_arc, 3, LV_PART_KNOB);
-    lv_obj_add_event_cb(s_arc, on_arc_event, LV_EVENT_ALL, NULL);
-    // Only the ring itself should grab touches, not the whole square it sits in.
-    lv_obj_add_flag(s_arc, LV_OBJ_FLAG_ADV_HITTEST);
+    // Two side arcs, sized like the Library's A-Z ring: progress on the right (fills from the top,
+    // drag to scrub the chapter) and volume on the left (fills from the bottom).
+    s_arc = side_arc(page, 300, 60, 1000, on_arc_event);
+    s_vol_arc = side_arc(page, 120, 240, 100, on_volume_arc);
+    lv_obj_t *vol_icon = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 0);
+    lv_label_set_text(vol_icon, LV_SYMBOL_VOLUME_MAX);
+    lv_obj_align(vol_icon, LV_ALIGN_CENTER, -146, 0);
 
     // Everything tappable stays inside radius ~150 so it never sits under the ring (ui_priv.h).
     s_title = ui_label(page, &lv_font_montserrat_20, COLOR_TEXT, 230);
@@ -278,14 +296,8 @@ void playing_build(lv_obj_t *page)
     s_remaining = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 220);
     lv_obj_align(s_remaining, LV_ALIGN_CENTER, 0, 79);
 
-    static const struct { const char *sym; lv_event_cb_t cb; intptr_t arg; int x; } row[] = {
-        {LV_SYMBOL_PREV, on_prev_ch, 0, -66},
-        {LV_SYMBOL_VOLUME_MID, on_volume, -10, -22},
-        {LV_SYMBOL_VOLUME_MAX, on_volume, 10, 22},
-        {LV_SYMBOL_NEXT, on_next_ch, 0, 66},
-    };
-    for (int i = 0; i < 4; i++) {
-        lv_obj_t *b = ui_round_button(page, 38, row[i].sym, &lv_font_montserrat_16, row[i].cb, (void *)row[i].arg);
-        lv_obj_align(b, LV_ALIGN_CENTER, row[i].x, 114);
-    }
+    lv_obj_t *prev = ui_round_button(page, 38, LV_SYMBOL_PREV, &lv_font_montserrat_16, on_prev_ch, NULL);
+    lv_obj_align(prev, LV_ALIGN_CENTER, -30, 114);
+    lv_obj_t *next = ui_round_button(page, 38, LV_SYMBOL_NEXT, &lv_font_montserrat_16, on_next_ch, NULL);
+    lv_obj_align(next, LV_ALIGN_CENTER, 30, 114);
 }

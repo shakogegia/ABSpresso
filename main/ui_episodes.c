@@ -205,6 +205,11 @@ void ui_episodes_show(int book_index)
     lv_obj_move_foreground(s_overlay);
 }
 
+void ui_episodes_hide(void)
+{
+    close_overlay();
+}
+
 bool ui_episodes_visible(void)
 {
     return s_book >= 0;

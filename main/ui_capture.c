@@ -104,7 +104,11 @@ static void locked(void (*fn)(int), int arg)
 
 static void show_page(int p) { ui_show_page((ui_page_t)p); }
 static void show_sheet(int i) { ui_sheet_show(i); }
-static void hide_sheet(int unused) { ui_sheet_hide(); }
+static void hide_sheet(int unused)
+{
+    ui_sheet_hide();
+    ui_episodes_hide();  // in a podcast library the "sheet" is the episode list
+}
 static void open_book(int i) { ui_open_book(i); }
 static void next_row(int unused) { home_debug_next_row(); }
 static void lib_view(int v) { library_debug_view(v); }
