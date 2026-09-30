@@ -20,7 +20,10 @@ static const char *TAG = "abs";
 
 static char s_auth[600];
 static char s_device_id[24];
-static esp_http_client_handle_t s_stream;
+static char s_device_id_dl[28];
+struct abs_stream {
+    esp_http_client_handle_t client;
+};
 
 // Library listings are hundreds of KB of JSON; keep cJSON's many small nodes out of internal RAM.
 static void *psram_malloc(size_t n)
@@ -45,6 +48,7 @@ void abs_api_init(void)
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     snprintf(s_device_id, sizeof(s_device_id), "esp32-%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf(s_device_id_dl, sizeof(s_device_id_dl), "%s-dl", s_device_id);
 }
 
 static esp_http_client_handle_t new_client(const char *path, esp_http_client_method_t method)
@@ -135,7 +139,8 @@ static int request_len(esp_http_client_method_t method, const char *path, const 
         status = -1;
     }
     if (status != 200) {
-        ESP_LOGW(TAG, "%s %s -> %d", method == HTTP_METHOD_GET ? "GET" : "POST", path, status);
+        ESP_LOGW(TAG, "%s %s -> %d", method == HTTP_METHOD_GET ? "GET" : (method == HTTP_METHOD_POST ? "POST" : "PATCH"),
+                 path, status);
     }
 done:
     if (keep && status > 0 && complete) {
@@ -174,10 +179,61 @@ static int book_cmp(const void *pa, const void *pb)
     return strcasecmp(a->sort_title, b->sort_title);
 }
 
-esp_err_t abs_get_books(abs_book_t **out_books, int *out_count)
+esp_err_t abs_parse_books(const char *items_json, const char *me_json, abs_book_t **out_books, int *out_count)
 {
     *out_books = NULL;
     *out_count = 0;
+    cJSON *root = cJSON_Parse(items_json);
+    if (!root) return ESP_FAIL;
+    const cJSON *results = cJSON_GetObjectItem(root, "results");
+    int n = cJSON_GetArraySize(results);
+    abs_book_t *books = heap_caps_calloc(n ? n : 1, sizeof(abs_book_t), MALLOC_CAP_SPIRAM);
+    int count = 0;
+    const cJSON *it;
+    cJSON_ArrayForEach(it, results) {
+        const cJSON *media = cJSON_GetObjectItem(it, "media");
+        const cJSON *meta = cJSON_GetObjectItem(media, "metadata");
+        const char *id = json_str(it, "id");
+        if (!id || !books) continue;
+        abs_book_t *b = &books[count++];
+        strlcpy(b->id, id, sizeof(b->id));
+        b->title = psram_strdup(json_str(meta, "title") ?: "Untitled");
+        b->sort_title = psram_strdup(json_str(meta, "titleIgnorePrefix") ?: b->title);
+        b->added_at = json_num(it, "addedAt");
+        b->author = psram_strdup(json_str(meta, "authorName") ?: "");
+        b->duration = json_num(media, "duration");
+    }
+    cJSON_Delete(root);
+
+    // Progress lives on the user record.
+    root = me_json ? cJSON_Parse(me_json) : NULL;
+    const cJSON *p;
+    cJSON_ArrayForEach(p, cJSON_GetObjectItem(root, "mediaProgress")) {
+        const char *item = json_str(p, "libraryItemId");
+        if (!item || json_str(p, "episodeId")) continue;
+        for (int i = 0; i < count; i++) {
+            if (strcmp(books[i].id, item) == 0) {
+                books[i].current_time = json_num(p, "currentTime");
+                books[i].progress = json_num(p, "progress");
+                books[i].finished = cJSON_IsTrue(cJSON_GetObjectItem(p, "isFinished"));
+                books[i].last_update = json_num(p, "lastUpdate");
+                break;
+            }
+        }
+    }
+    cJSON_Delete(root);
+
+    qsort(books, count, sizeof(abs_book_t), book_cmp);
+    *out_books = books;
+    *out_count = count;
+    return ESP_OK;
+}
+
+esp_err_t abs_get_books(abs_book_t **out_books, int *out_count, char **items_json, char **me_json)
+{
+    *out_books = NULL;
+    *out_count = 0;
+    *items_json = *me_json = NULL;
     char *body = NULL;
     char lib_id[40] = "";
 
@@ -203,58 +259,25 @@ esp_err_t abs_get_books(abs_book_t **out_books, int *out_count)
 
     char path[160];
     snprintf(path, sizeof(path), "/api/libraries/%s/items?limit=1000&minified=1", lib_id);
-    if (request(HTTP_METHOD_GET, path, NULL, &body) != 200) {
-        free(body);
+    if (request(HTTP_METHOD_GET, path, NULL, items_json) != 200 ||
+        request(HTTP_METHOD_GET, "/api/me", NULL, me_json) != 200) {
+        free(*items_json);
+        free(*me_json);
+        *items_json = *me_json = NULL;
         return ESP_FAIL;
     }
-    root = cJSON_Parse(body);
-    free(body);
-    const cJSON *results = cJSON_GetObjectItem(root, "results");
-    int n = cJSON_GetArraySize(results);
-    abs_book_t *books = heap_caps_calloc(n ? n : 1, sizeof(abs_book_t), MALLOC_CAP_SPIRAM);
-    int count = 0;
-    const cJSON *it;
-    cJSON_ArrayForEach(it, results) {
-        const cJSON *media = cJSON_GetObjectItem(it, "media");
-        const cJSON *meta = cJSON_GetObjectItem(media, "metadata");
-        const char *id = json_str(it, "id");
-        if (!id || !books) continue;
-        abs_book_t *b = &books[count++];
-        strlcpy(b->id, id, sizeof(b->id));
-        b->title = psram_strdup(json_str(meta, "title") ?: "Untitled");
-        b->sort_title = psram_strdup(json_str(meta, "titleIgnorePrefix") ?: b->title);
-        b->added_at = json_num(it, "addedAt");
-        b->author = psram_strdup(json_str(meta, "authorName") ?: "");
-        b->duration = json_num(media, "duration");
-    }
-    cJSON_Delete(root);
+    esp_err_t err = abs_parse_books(*items_json, *me_json, out_books, out_count);
+    ESP_LOGI(TAG, "loaded %d books", *out_count);
+    return err;
+}
 
-    // Progress lives on the user record.
-    if (request(HTTP_METHOD_GET, "/api/me", NULL, &body) == 200) {
-        root = cJSON_Parse(body);
-        const cJSON *p;
-        cJSON_ArrayForEach(p, cJSON_GetObjectItem(root, "mediaProgress")) {
-            const char *item = json_str(p, "libraryItemId");
-            if (!item || json_str(p, "episodeId")) continue;
-            for (int i = 0; i < count; i++) {
-                if (strcmp(books[i].id, item) == 0) {
-                    books[i].current_time = json_num(p, "currentTime");
-                    books[i].progress = json_num(p, "progress");
-                    books[i].finished = cJSON_IsTrue(cJSON_GetObjectItem(p, "isFinished"));
-                    books[i].last_update = json_num(p, "lastUpdate");
-                    break;
-                }
-            }
-        }
-        cJSON_Delete(root);
-    }
-    free(body);
-
-    qsort(books, count, sizeof(abs_book_t), book_cmp);
-    ESP_LOGI(TAG, "loaded %d books", count);
-    *out_books = books;
-    *out_count = count;
-    return ESP_OK;
+esp_err_t abs_patch_progress(const char *item_id, double current_time, double duration, bool finished)
+{
+    char path[96], body[160];
+    snprintf(path, sizeof(path), "/api/me/progress/%s", item_id);
+    snprintf(body, sizeof(body), "{\"currentTime\":%.2f,\"duration\":%.2f,\"progress\":%.5f,\"isFinished\":%s}",
+             current_time, duration, duration > 0 ? current_time / duration : 0, finished ? "true" : "false");
+    return request(HTTP_METHOD_PATCH, path, body, NULL) == 200 ? ESP_OK : ESP_FAIL;
 }
 
 void abs_free_books(abs_book_t *books, int count)
@@ -267,7 +290,7 @@ void abs_free_books(abs_book_t *books, int count)
     free(books);
 }
 
-esp_err_t abs_start_session(const char *item_id, abs_session_t *out)
+esp_err_t abs_start_session(const char *item_id, bool for_download, abs_session_t *out)
 {
     memset(out, 0, sizeof(*out));
     char path[96], req[320];
@@ -277,7 +300,9 @@ esp_err_t abs_start_session(const char *item_id, abs_session_t *out)
     snprintf(req, sizeof(req),
              "{\"deviceInfo\":{\"clientName\":\"" DEVICE_NAME "\",\"deviceId\":\"%s\"},"
              "\"supportedMimeTypes\":[\"audio/mpeg\"],\"mediaPlayer\":\"esp32\",\"forceTranscode\":true}",
-             s_device_id);
+             // Downloads use their own device id so the server never treats them as the same
+             // session as playback (it may close one device's session when another starts).
+             for_download ? s_device_id_dl : s_device_id);
     char *body = NULL;
     if (request(HTTP_METHOD_POST, path, req, &body) != 200) {
         free(body);
@@ -348,48 +373,53 @@ esp_err_t abs_close_session(const char *session_id, double current_time, double 
     return request(HTTP_METHOD_POST, path, body, NULL) == 200 ? ESP_OK : ESP_FAIL;
 }
 
-int abs_stream_begin(const char *path)
+abs_stream_t *abs_stream_create(void)
+{
+    return heap_caps_calloc(1, sizeof(abs_stream_t), MALLOC_CAP_SPIRAM);
+}
+
+int abs_stream_begin(abs_stream_t *st, const char *path)
 {
     char url[256];
     snprintf(url, sizeof(url), "https://%s%s", ABS_SERVER, path);
-    if (!s_stream) {
-        s_stream = new_client(path, HTTP_METHOD_GET);
-        if (!s_stream) return -1;
+    if (!st->client) {
+        st->client = new_client(path, HTTP_METHOD_GET);
+        if (!st->client) return -1;
     } else {
-        esp_http_client_set_url(s_stream, url);
+        esp_http_client_set_url(st->client, url);
     }
-    esp_err_t err = esp_http_client_open(s_stream, 0);
+    esp_err_t err = esp_http_client_open(st->client, 0);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "segment connect failed: %s", esp_err_to_name(err));
-        abs_stream_end(false);
+        abs_stream_end(st, false);
         return -1;
     }
-    if (esp_http_client_fetch_headers(s_stream) < 0) {
-        abs_stream_end(false);
+    if (esp_http_client_fetch_headers(st->client) < 0) {
+        abs_stream_end(st, false);
         return -1;
     }
-    return esp_http_client_get_status_code(s_stream);
+    return esp_http_client_get_status_code(st->client);
 }
 
-int abs_stream_read(char *buf, int len)
+int abs_stream_read(abs_stream_t *st, char *buf, int len)
 {
-    return esp_http_client_read(s_stream, buf, len);
+    return esp_http_client_read(st->client, buf, len);
 }
 
-bool abs_stream_complete(void)
+bool abs_stream_complete(abs_stream_t *st)
 {
-    return s_stream && esp_http_client_is_complete_data_received(s_stream);
+    return st->client && esp_http_client_is_complete_data_received(st->client);
 }
 
-void abs_stream_end(bool keep_alive)
+void abs_stream_end(abs_stream_t *st, bool keep_alive)
 {
-    if (!s_stream) return;
+    if (!st->client) return;
     if (keep_alive) {
         // Drain anything left so the connection can carry the next request.
-        esp_http_client_flush_response(s_stream, NULL);
+        esp_http_client_flush_response(st->client, NULL);
     } else {
-        esp_http_client_cleanup(s_stream);
-        s_stream = NULL;
+        esp_http_client_cleanup(st->client);
+        st->client = NULL;
     }
 }
 

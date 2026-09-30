@@ -103,6 +103,8 @@ static void locked(void (*fn)(int), int arg)
 }
 
 static void show_page(int p) { ui_show_page((ui_page_t)p); }
+static void show_sheet(int i) { ui_sheet_show(i); }
+static void hide_sheet(int unused) { ui_sheet_hide(); }
 static void open_book(int i) { ui_open_book(i); }
 static void next_row(int unused) { home_debug_next_row(); }
 static void lib_view(int v) { library_debug_view(v); }
@@ -120,6 +122,11 @@ static void capture_task(void *arg)
     printf("CAPTURE BEGIN\n");
 
     // Stills.
+    locked(show_sheet, g_continue.count ? g_continue.idx[0] : 0);
+    wait_real(2500);
+    shot("book_sheet", 0);
+    locked(hide_sheet, 0);
+
     locked(show_page, PAGE_HOME);
     wait_real(5000);
     shot("home_continue", 0);

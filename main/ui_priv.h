@@ -45,6 +45,7 @@ extern int g_book_count;
 extern book_list_t g_alpha;      // all books A-Z
 extern book_list_t g_continue;   // started, not finished; most recently listened first
 extern book_list_t g_recent;     // newest additions first
+extern book_list_t g_downloaded; // on the SD card or downloading, A-Z
 extern author_t *g_authors;      // A-Z by surname
 extern int g_author_count;
 
@@ -55,16 +56,29 @@ lv_obj_t *ui_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, in
 lv_obj_t *ui_page_container(lv_obj_t *parent);
 // Makes a label a single full-width line that ends in "..." when too long.
 void ui_one_line(lv_obj_t *label, const lv_font_t *font);
+// "Author  •  34%", plus an SD/download marker for downloaded books.
 void ui_book_subtitle(const abs_book_t *b, char *buf, size_t len);
+void ui_book_subtitle_plain(const abs_book_t *b, char *buf, size_t len);
 bool ui_book_in_progress(const abs_book_t *b);
 lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index);
 void ui_open_book(int book_index);
 void ui_show_page(ui_page_t page);
 
+/* book details sheet (ui_sheet.c) */
+void sheet_build(lv_obj_t *scr);
+void ui_sheet_show(int book_index);
+void ui_sheet_refresh(void);
+void ui_sheet_hide(void);
+bool ui_sheet_visible(void);
+// Index into g_books of the book with this id, or -1.
+int ui_find_book(const char *item_id);
+
 /* pages */
 void home_build(lv_obj_t *page);
 void home_set_books(void);
 void home_refresh(void);
+// The shelves' contents changed (e.g. a download was added or removed).
+void home_lists_changed(void);
 
 void library_build(lv_obj_t *page);
 void library_set_books(void);

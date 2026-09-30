@@ -16,6 +16,7 @@ typedef struct {
 static row_t s_rows[] = {
     {"Continue Listening", &g_continue, 0},
     {"Recently Added", &g_recent, 0},
+    {"Downloaded", &g_downloaded, 0},
 };
 #define ROW_COUNT (int)(sizeof(s_rows) / sizeof(s_rows[0]))
 
@@ -162,6 +163,15 @@ void home_set_books(void)
     for (int i = 0; i < ROW_COUNT; i++) s_rows[i].pos = 0;
     s_row = -1;
     show_row(next_row(-1, 1), 0);
+}
+
+void home_lists_changed(void)
+{
+    // Stay on the current shelf if it still has books (keeping the position); else find another.
+    int r = row_has_books(s_row) ? s_row : next_row(-1, 1);
+    if (s_row >= 0) s_rows[s_row].pos = carousel_pos(s_carousel);
+    s_row = -1;
+    show_row(r, 0);
 }
 
 void home_refresh(void)

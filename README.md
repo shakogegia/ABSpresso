@@ -25,6 +25,12 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
 - **Now Playing:** cover art backdrop, a chapter-progress ring you can drag to scrub, ±30 s,
   previous/next chapter and volume. When nothing is loaded it offers your most recent book to
   resume.
+- **Book details** (long-press any book, or tap the title on Now Playing): play, and download to /
+  remove from the SD card.
+- **SD card (optional):** caches the library and cover art for instant start-up and offline
+  browsing, and holds downloaded books for offline listening. Progress made offline is pushed
+  to the server the next time it's reachable. Downloaded books also get a "Downloaded" shelf on
+  Home.
 
 ## Screenshots
 
@@ -39,10 +45,12 @@ Captured on the device itself (see [Capturing screenshots](#capturing-screenshot
 | :---: | :---: |
 | <img src="docs/media/carousel.gif" width="300"> | <img src="docs/media/playing.gif" width="300"> |
 
+<img src="docs/media/book_sheet.png" width="200" align="right">
 <img src="docs/media/library_scrub.png" width="200" align="right">
 
 Dragging the ring on the Library page's right edge jumps through the list A-Z, with the current
-letter shown large.
+letter shown large. Long-pressing a book opens its details, where it can be downloaded to the SD
+card.
 <br clear="right">
 
 ## Hardware
@@ -55,6 +63,7 @@ letter shown large.
 | Memory | 8 MB octal PSRAM, 16 MB flash |
 | Display | 1.85" round 360×360 IPS, ST77916 over QSPI |
 | Touch | CST816T capacitive (I2C) |
+| Storage | microSD slot (1-bit SDMMC), optional |
 | Audio | PCM5101 I2S DAC + NS8002 amplifier, onboard speaker |
 | IO expander | TCA9554 (LCD/touch resets, amp enable) |
 
@@ -68,6 +77,7 @@ Pin assignments used (see `main/board.c`):
 | Touch interrupt | 4 |
 | I2S BCK / LRCK / DOUT (to PCM5101) | 48 / 38 / 47 |
 | LCD reset, touch reset | expander pins EXIO2, EXIO1 |
+| microSD CLK / CMD / D0 | 14 / 17 / 16 |
 
 **Board revisions matter.** Waveshare ships two audio variants of this board. V2 has an ES8311
 codec and ES7210 microphone ADC on I2C, and Waveshare's demo code targets it. V1, which this
@@ -94,7 +104,34 @@ microcontroller impractical. Instead the player uses Audiobookshelf's HLS transc
    session, and progress sync (every 20 s, and on pause, seek and close).
 
 Cover art is downloaded already resized by the server, decoded with the ESP32-S3's ROM JPEG
-decoder, and held in an LRU cache in PSRAM.
+decoder, and held in an LRU cache in PSRAM (and on the SD card when one is fitted).
+
+### SD card: caching and downloads
+
+With a FAT-formatted microSD card inserted (it is never formatted by the firmware), everything
+lives under `/sdcard/abs/`:
+
+| Path | Contents |
+| --- | --- |
+| `items.json`, `me.json` | The last library and progress the server sent. Shown at boot before Wi-Fi is up, then refreshed. |
+| `covers/<id>_<size>.jpg` | Cover JPEGs as downloaded; read back in ~45 ms instead of a network round trip. |
+| `dl/<id>/audio.ts` | A downloaded book: its HLS segments appended in order. |
+| `dl/<id>/index.bin` | End offset of each completed segment (so seeking is one lookup). |
+| `dl/<id>/meta.json` | Duration and chapters, for playback without the server. |
+| `dl/<id>/progress.json` | Local listening position, and whether the server still needs it. |
+
+**Downloads** fetch the same transcoded segments the player streams, using a separate
+playback session (with its own device ID so it never collides with playback), and run in the
+background one at a time. A 1-hour book takes about 2 minutes. Index entries are written only
+after the audio is synced to the card, so a download interrupted by a reboot or power loss
+resumes from the last complete segment. Removing a download cancels it if needed and deletes it
+in the background.
+
+**Playing a downloaded book** reads `audio.ts` from the card through the same decoder as
+streaming, with no server session. Progress is saved to `progress.json` every 20 seconds (and on
+pause, seek and stop) and sent with `PATCH /api/me/progress/:id` whenever Wi-Fi is up. Positions
+saved while offline are pushed at the next library load, and they take priority over the
+server's older value.
 
 ## Project layout
 
@@ -105,12 +142,15 @@ main/
   wifi.c/.h        station mode using secrets.h
   abs_api.c/.h     Audiobookshelf REST client (library, progress, sessions, covers, HLS segments)
   player.c/.h      streaming player: fetch / decode / control tasks
-  cover.c/.h       cover download, JPEG decode and PSRAM LRU cache
+  cover.c/.h       cover download (SD-cached), JPEG decode and PSRAM LRU cache
+  storage.c/.h     SD card mount and safe file helpers
+  download.c/.h    background book downloads and offline progress
   carousel.c/.h    reusable virtual cover carousel (3 card objects, any number of books)
   ui.c, ui_priv.h  UI shell: dock, pages, shared helpers, derived book lists
   ui_home.c        Home shelves
   ui_library.c     Library list / covers / authors + A-Z ring
   ui_player.c      Now Playing
+  ui_sheet.c       book details sheet (play / download / remove)
   lv_mem_psram.c   LVGL allocator that keeps all UI objects in PSRAM
   secrets.h.example
 ```
@@ -155,6 +195,10 @@ The console is on the board's native USB (USB-Serial/JTAG).
   compete for ~512 KB of on-chip SRAM. LVGL uses a custom allocator (`lv_mem_psram.c`) so every UI
   object lives in PSRAM. That took free internal RAM from ~14 KB to ~41 KB. Covers, the audio
   buffer, JSON parsing and the cover loader's stack are also in PSRAM.
+- **SD card and PSRAM don't mix:** the SDMMC controller's DMA corrupts data going to or from
+  PSRAM buffers. File data therefore goes through a small internal-RAM bounce buffer
+  (`storage.c`), and `CONFIG_FATFS_VFS_FSTAT_BLKSIZE` is left at 0: a 4 KB stdio buffer would be
+  allocated in PSRAM and silently scramble files.
 - **Touch:** the CST816T powers up with continuous swipe tracking disabled (MotionMask `0xEC` =
   0), which breaks gestures. `board.c` sets it to `0x06`.
 - **Display:** panels that report ID `00 02 7F 7F` need Waveshare's alternate ST77916 init
@@ -196,3 +240,7 @@ masked to the round panel. Note that the capture shows your own library's titles
 - No screen timeout or sleep yet; the first library load and first cover take a few seconds
   (TLS handshakes). An SD-card cache for covers and the library is a planned improvement.
 - Only the first book library on the server is shown; podcasts aren't supported.
+- Listening to a downloaded book updates your progress but isn't recorded as a listening session
+  in the server's stats.
+- Cached covers aren't refreshed if you change a book's cover on the server (delete
+  `/sdcard/abs/covers` to reset). Downloads have no overall storage cap beyond the card's free space.

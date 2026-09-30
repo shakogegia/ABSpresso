@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -11,6 +12,9 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "jpeg_decoder.h"
+#include "storage.h"
+
+#define COVER_DIR STORAGE_ROOT "/covers"
 
 static const char *TAG = "cover";
 
@@ -118,6 +122,25 @@ static lv_image_dsc_t *decode(const uint8_t *jpg, size_t len, bool dim)
     return dsc;
 }
 
+// Covers come from the SD card when cached there; otherwise from the server (and are then saved).
+static esp_err_t load_jpeg(const char *id, int size, uint8_t **jpg, size_t *len, bool *from_sd)
+{
+    char path[128];
+    snprintf(path, sizeof(path), COVER_DIR "/%s_%d.jpg", id, size);
+    *jpg = (uint8_t *)storage_read_file(path, len);
+    if (*jpg && *len > 0) {
+        *from_sd = true;
+        return ESP_OK;
+    }
+    free(*jpg);
+    *jpg = NULL;
+    esp_err_t err = abs_get_cover(id, size, jpg, len);
+    if (err == ESP_OK && storage_ready()) {
+        storage_write_file(path, *jpg, *len);
+    }
+    return err;
+}
+
 static void cover_task(void *arg)
 {
     for (;;) {
@@ -139,13 +162,27 @@ static void cover_task(void *arg)
             uint8_t *jpg = NULL;
             size_t len = 0;
             lv_image_dsc_t *dsc = NULL;
-            if (abs_get_cover(k.id, size, &jpg, &len) == ESP_OK) {
+            bool from_sd = false;
+            if (load_jpeg(k.id, size, &jpg, &len, &from_sd) == ESP_OK) {
                 dsc = decode(jpg, len, k.kind == COVER_BACKDROP);
+                if (!dsc && from_sd) {
+                    // A damaged cache file: drop it and fetch a fresh copy.
+                    char path[128];
+                    snprintf(path, sizeof(path), COVER_DIR "/%s_%d.jpg", k.id, size);
+                    unlink(path);
+                    free(jpg);
+                    jpg = NULL;
+                    from_sd = false;
+                    if (abs_get_cover(k.id, size, &jpg, &len) == ESP_OK) {
+                        dsc = decode(jpg, len, k.kind == COVER_BACKDROP);
+                        if (dsc) storage_write_file(path, jpg, len);
+                    }
+                }
             }
             free(jpg);
             if (dsc) {
-                ESP_LOGI(TAG, "%.8s %dx%d in %d ms", k.id, (int)dsc->header.w, (int)dsc->header.h,
-                         (int)((esp_timer_get_time() - t0) / 1000));
+                ESP_LOGI(TAG, "%.8s %dx%d in %d ms%s", k.id, (int)dsc->header.w, (int)dsc->header.h,
+                         (int)((esp_timer_get_time() - t0) / 1000), from_sd ? " (SD)" : "");
             } else {
                 ESP_LOGI(TAG, "no cover for %.8s", k.id);
             }
@@ -257,6 +294,7 @@ const lv_image_dsc_t *cover_get(const char *item_id, cover_kind_t kind)
 
 void cover_init(void)
 {
+    if (storage_ready()) storage_mkdirs(COVER_DIR);
     s_lock = xSemaphoreCreateMutex();
     // Stack in PSRAM: this task never touches flash, and internal RAM is the scarce resource.
     xTaskCreatePinnedToCoreWithCaps(cover_task, "cover", 8192, NULL, 3, &s_task, 0, MALLOC_CAP_SPIRAM);

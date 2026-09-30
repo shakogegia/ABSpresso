@@ -10,6 +10,7 @@
 #include <string.h>
 #include <strings.h>
 #include "esp_heap_caps.h"
+#include "download.h"
 #include "player.h"
 #include "ui_priv.h"
 
@@ -18,7 +19,7 @@
 
 const abs_book_t *g_books;
 int g_book_count;
-book_list_t g_alpha, g_continue, g_recent;
+book_list_t g_alpha, g_continue, g_recent, g_downloaded;
 author_t *g_authors;
 int g_author_count;
 
@@ -83,6 +84,19 @@ lv_obj_t *ui_page_container(lv_obj_t *parent)
 
 void ui_book_subtitle(const abs_book_t *b, char *buf, size_t len)
 {
+    // Downloaded (or downloading) books carry a marker after the progress.
+    dl_state_t dl = download_state(b->id, NULL);
+    const char *mark = dl == DL_DONE ? "  " LV_SYMBOL_SD_CARD
+                       : (dl == DL_QUEUED || dl == DL_ACTIVE) ? "  " LV_SYMBOL_DOWNLOAD
+                                                               : "";
+    const size_t mark_len = strlen(mark);
+    if (len <= mark_len) return ui_book_subtitle_plain(b, buf, len);
+    ui_book_subtitle_plain(b, buf, len - mark_len);
+    strcat(buf, mark);
+}
+
+void ui_book_subtitle_plain(const abs_book_t *b, char *buf, size_t len)
+{
     if (b->finished) {
         snprintf(buf, len, "%s  " LV_SYMBOL_OK, b->author);
     } else if (b->current_time > 0 && b->progress < 0.01f) {
@@ -102,6 +116,19 @@ bool ui_book_in_progress(const abs_book_t *b)
 static void on_book_row_clicked(lv_event_t *e)
 {
     ui_open_book((int)(intptr_t)lv_event_get_user_data(e));
+}
+
+static void on_book_row_long(lv_event_t *e)
+{
+    ui_sheet_show((int)(intptr_t)lv_event_get_user_data(e));
+}
+
+int ui_find_book(const char *item_id)
+{
+    for (int i = 0; item_id && item_id[0] && i < g_book_count; i++) {
+        if (strcmp(g_books[i].id, item_id) == 0) return i;
+    }
+    return -1;
 }
 
 lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index)
@@ -128,7 +155,9 @@ lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index)
     ui_one_line(a, &lv_font_montserrat_14);
     lv_obj_set_style_text_color(a, ui_book_in_progress(b) ? COLOR_ACCENT : COLOR_MUTED, 0);
 
-    lv_obj_add_event_cb(btn, on_book_row_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)book_index);
+    // Short tap plays; long-press opens the details sheet (short-click isn't sent after a long press).
+    lv_obj_add_event_cb(btn, on_book_row_clicked, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)book_index);
+    lv_obj_add_event_cb(btn, on_book_row_long, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)book_index);
     return btn;
 }
 
@@ -169,8 +198,37 @@ static void on_dock(lv_event_t *e)
     ui_show_page((ui_page_t)(intptr_t)lv_event_get_user_data(e));
 }
 
+// Rebuilds g_downloaded; returns true if its membership changed (not just progress).
+static bool rebuild_downloaded(void)
+{
+    static int *prev;
+    static int prev_n;
+    int n = 0;
+    for (int i = 0; i < g_alpha.count; i++) {
+        dl_state_t st = download_state(g_books[g_alpha.idx[i]].id, NULL);
+        if (st != DL_NONE && st != DL_REMOVING) g_downloaded.idx[n++] = g_alpha.idx[i];
+    }
+    g_downloaded.count = n;
+    bool changed = n != prev_n || (n && memcmp(prev, g_downloaded.idx, n * sizeof(int)) != 0);
+    free(prev);
+    prev = heap_caps_malloc((n ? n : 1) * sizeof(int), MALLOC_CAP_SPIRAM);
+    memcpy(prev, g_downloaded.idx, n * sizeof(int));
+    prev_n = n;
+    return changed;
+}
+
 static void refresh_timer(lv_timer_t *t)
 {
+    static uint32_t dl_gen;
+    if (g_book_count && download_generation() != dl_gen) {
+        dl_gen = download_generation();
+        if (rebuild_downloaded()) home_lists_changed();
+    }
+    if (ui_sheet_visible()) {
+        ui_sheet_refresh();
+        return;
+    }
+
     switch (s_page) {
     case PAGE_HOME:    home_refresh(); break;
     case PAGE_LIBRARY: library_refresh(); break;
@@ -203,6 +261,8 @@ void ui_init(void)
         lv_obj_align(s_dock[i], LV_ALIGN_TOP_MID, (i - 1) * 46, DOCK_Y);
         lv_obj_set_style_border_color(s_dock[i], COLOR_ACCENT, 0);
     }
+
+    sheet_build(s_scr);
 
     s_msg = ui_label(s_scr, &lv_font_montserrat_16, COLOR_MUTED, 240);
     lv_label_set_long_mode(s_msg, LV_LABEL_LONG_WRAP);
@@ -261,6 +321,7 @@ static void free_lists(void)
     free(g_alpha.idx);
     free(g_continue.idx);
     free(g_recent.idx);
+    free(g_downloaded.idx);
     for (int i = 0; i < g_author_count; i++) {
         free(g_authors[i].name);
         free(g_authors[i].sort_key);
@@ -270,6 +331,7 @@ static void free_lists(void)
     memset(&g_alpha, 0, sizeof(g_alpha));
     memset(&g_continue, 0, sizeof(g_continue));
     memset(&g_recent, 0, sizeof(g_recent));
+    memset(&g_downloaded, 0, sizeof(g_downloaded));
     g_authors = NULL;
     g_author_count = 0;
 }
@@ -329,6 +391,7 @@ void ui_set_books(const abs_book_t *books, int count)
     g_alpha.idx = ps_alloc(count * sizeof(int));
     g_continue.idx = ps_alloc(count * sizeof(int));
     g_recent.idx = ps_alloc(count * sizeof(int));
+    g_downloaded.idx = ps_alloc(count * sizeof(int));
     for (int i = 0; i < count; i++) {
         g_alpha.idx[g_alpha.count++] = i;  // the server list is already A-Z
         g_recent.idx[g_recent.count++] = i;
@@ -338,6 +401,7 @@ void ui_set_books(const abs_book_t *books, int count)
     qsort(g_recent.idx, g_recent.count, sizeof(int), cmp_added);
     if (g_recent.count > RECENT_MAX) g_recent.count = RECENT_MAX;
     build_authors();
+    rebuild_downloaded();
 
     home_set_books();
     library_set_books();

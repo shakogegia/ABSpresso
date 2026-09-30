@@ -19,6 +19,8 @@
 #include "freertos/stream_buffer.h"
 #include "freertos/task.h"
 #include "board.h"
+#include "download.h"
+#include "wifi.h"
 #include "esp_audio_simple_dec.h"
 #include "esp_audio_dec_default.h"
 #include "esp_audio_simple_dec_default.h"
@@ -51,6 +53,7 @@ typedef struct {
     char id[40];
     char title[128];
     char author[96];
+    double book_time;  // the server's saved position for the book
 } cmd_t;
 
 #define BIT_FETCH_IDLE  BIT0
@@ -84,6 +87,9 @@ static int s_dbg_env_frames, s_dbg_env_block;
 // Control-task state.
 static abs_session_t s_session;
 static bool s_have_session;
+static bool s_local;          // playing a download from the SD card (no server session)
+static double s_book_time;    // server position of the open book, for reopening
+static abs_stream_t *s_net;
 static double s_seg_start_time;
 static double s_listen_since_sync;
 static int64_t s_last_sync_us, s_last_tick_us;
@@ -117,23 +123,23 @@ static bool fetch_segment(int seg, char *buf, int buf_len)
         if (attempt) {
             sleep_unless_abort(attempt < 3 ? 500 : 1000);
         }
-        int status = abs_stream_begin(path);
+        int status = abs_stream_begin(s_net, path);
         if (status != 200) {
             // 404: not transcoded yet. 500: the server restarted its transcoder for our seek.
             ESP_LOGD(TAG, "%s -> %d", path, status);
-            abs_stream_end(status > 0);
+            abs_stream_end(s_net, status > 0);
             continue;
         }
         int offset = 0;
         bool ok = true;
         while (!s_abort) {
-            int n = abs_stream_read(buf, buf_len);
+            int n = abs_stream_read(s_net, buf, buf_len);
             if (n < 0) {
                 ok = false;
                 break;
             }
             if (n == 0) {
-                ok = abs_stream_complete();
+                ok = abs_stream_complete(s_net);
                 break;
             }
             int skip = delivered - offset;
@@ -144,16 +150,36 @@ static bool fetch_segment(int seg, char *buf, int buf_len)
             delivered += n - skip;
         }
         if (s_abort) {
-            abs_stream_end(false);
+            abs_stream_end(s_net, false);
             return false;
         }
-        abs_stream_end(ok);
+        abs_stream_end(s_net, ok);
         if (ok) {
             return true;
         }
         ESP_LOGW(TAG, "segment %d interrupted after %d bytes, retrying", seg, delivered);
     }
     return false;
+}
+
+// Downloaded book: the same TS stream, read from the SD card from the start segment onwards.
+static void fetch_local(char *buf, int buf_len)
+{
+    char path[128];
+    uint32_t offset;
+    download_audio_path(s_status.item_id, path, sizeof(path));
+    FILE *f = download_segment_offset(s_status.item_id, s_start_seg, &offset) == ESP_OK ? fopen(path, "rb") : NULL;
+    if (!f || fseek(f, offset, SEEK_SET) != 0) {
+        ESP_LOGE(TAG, "can't read downloaded audio %s", path);
+        if (f) fclose(f);
+        s_fetch_failed = true;
+        return;
+    }
+    size_t n;
+    while (!s_abort && (n = fread(buf, 1, buf_len, f)) > 0) {
+        if (!send_all((uint8_t *)buf, n)) break;
+    }
+    fclose(f);
 }
 
 static void fetch_task(void *arg)
@@ -163,6 +189,11 @@ static void fetch_task(void *arg)
     for (;;) {
         xEventGroupSetBits(s_idle, BIT_FETCH_IDLE);
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (s_local) {
+            fetch_local(buf, buf_len);
+            if (!s_abort && !s_fetch_failed) s_fetch_done = true;
+            continue;
+        }
         for (int seg = s_start_seg; seg <= s_last_seg && !s_abort; seg++) {
             if (!fetch_segment(seg, buf, buf_len)) {
                 if (!s_abort) {
@@ -418,17 +449,31 @@ static void sync_progress(bool force)
     if (!s_have_session || s_listen_since_sync <= 0) return;
     int64_t now = esp_timer_get_time();
     if (!force && now - s_last_sync_us < SYNC_INTERVAL_US) return;
+    s_last_sync_us = now;
+    if (s_local) {
+        // Downloads: save locally first (works offline), then tell the server if we can.
+        const double pos = current_position();
+        download_set_progress(s_status.item_id, pos, true);
+        if (wifi_is_connected() && abs_patch_progress(s_status.item_id, pos, s_session.duration, false) == ESP_OK) {
+            download_set_progress(s_status.item_id, pos, false);
+        }
+        s_listen_since_sync = 0;
+        return;
+    }
     if (abs_sync_session(s_session.id, current_position(), s_listen_since_sync, s_session.duration) == ESP_OK) {
         s_listen_since_sync = 0;
     }
-    s_last_sync_us = now;
 }
 
 static void close_session(void)
 {
     if (!s_have_session) return;
     pipeline_stop();
-    abs_close_session(s_session.id, current_position(), s_listen_since_sync);
+    if (s_local) {
+        sync_progress(true);
+    } else {
+        abs_close_session(s_session.id, current_position(), s_listen_since_sync);
+    }
     abs_free_session(&s_session);
     s_have_session = false;
     s_listen_since_sync = 0;
@@ -438,7 +483,18 @@ static void close_session(void)
 static bool open_session(const char *item_id)
 {
     set_state(PLAYER_LOADING);
-    if (abs_start_session(item_id, &s_session) != ESP_OK) {
+    s_local = download_state(item_id, NULL) == DL_DONE && download_load_meta(item_id, &s_session) == ESP_OK;
+    if (s_local) {
+        // Start from any offline listening not yet on the server, else the server's position.
+        double pos;
+        bool pending;
+        s_session.current_time = (download_get_progress(item_id, &pos, &pending) && pending) ? pos : s_book_time;
+        ESP_LOGI(TAG, "playing download from %.0f s", s_session.current_time);
+        s_have_session = true;
+        s_last_sync_us = esp_timer_get_time();
+        return true;
+    }
+    if (abs_start_session(item_id, false, &s_session) != ESP_OK) {
         set_state(PLAYER_ERROR);
         return false;
     }
@@ -476,6 +532,7 @@ static void handle(const cmd_t *c)
         s_status.chapter[0] = 0;
         s_status.position = 0;
         xSemaphoreGive(s_lock);
+        s_book_time = c->book_time;
         if (open_session(c->id)) {
             s_paused = false;
             pipeline_start(s_session.current_time);
@@ -593,7 +650,13 @@ static void control_task(void *arg)
             sync_progress(false);
         } else if (st == PLAYER_FINISHED && s_have_session) {
             ESP_LOGI(TAG, "book finished");
+            const bool local = s_local;
+            const double duration = s_session.duration;
             close_session();
+            if (local && wifi_is_connected() &&
+                abs_patch_progress(s_status.item_id, duration, duration, true) == ESP_OK) {
+                download_set_progress(s_status.item_id, duration, false);
+            }
         }
     }
 }
@@ -605,6 +668,7 @@ void player_init(void)
     s_lock = xSemaphoreCreateMutex();
     s_cmds = xQueueCreate(8, sizeof(cmd_t));
     s_idle = xEventGroupCreate();
+    s_net = abs_stream_create();
 
     uint8_t *storage = heap_caps_malloc(STREAM_BUF_SIZE + 1, MALLOC_CAP_SPIRAM);
     static StaticStreamBuffer_t sb_struct;
@@ -642,6 +706,7 @@ void player_open(const abs_book_t *book)
     strlcpy(c.id, book->id, sizeof(c.id));
     strlcpy(c.title, book->title, sizeof(c.title));
     strlcpy(c.author, book->author, sizeof(c.author));
+    c.book_time = book->current_time;
     xQueueSend(s_cmds, &c, 0);
 }
 

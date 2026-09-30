@@ -128,6 +128,16 @@ void carousel_jump(carousel_t *c, int pos)
     bind(c);
 }
 
+static void on_card_long(lv_event_t *e)
+{
+    carousel_t *c = lv_event_get_user_data(e);
+    for (int k = 0; k < 3; k++) {
+        if (lv_event_get_current_target(e) == c->cards[k].root && c->cards[k].pos >= 0) {
+            ui_sheet_show(c->idx[c->cards[k].pos]);
+        }
+    }
+}
+
 static void on_card_clicked(lv_event_t *e)
 {
     carousel_t *c = lv_event_get_user_data(e);
@@ -167,7 +177,9 @@ carousel_t *carousel_create(lv_obj_t *parent, const carousel_cfg_t *cfg)
         lv_obj_set_style_radius(card->root, 10, 0);
         lv_obj_add_flag(card->root, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(card->root, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_event_cb(card->root, on_card_clicked, LV_EVENT_CLICKED, c);
+        // Short tap plays (or steps to a side card); long-press opens the details sheet.
+        lv_obj_add_event_cb(card->root, on_card_clicked, LV_EVENT_SHORT_CLICKED, c);
+        lv_obj_add_event_cb(card->root, on_card_long, LV_EVENT_LONG_PRESSED, c);
 
         card->placeholder = ui_label(card->root, &lv_font_montserrat_16, COLOR_MUTED, CARD_SIZE - 20);
         lv_label_set_long_mode(card->placeholder, LV_LABEL_LONG_WRAP);

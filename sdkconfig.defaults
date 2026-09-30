@@ -46,3 +46,7 @@ CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS=y
 
 # Screen capture (used by the UI_CAPTURE debug build)
 CONFIG_LV_USE_SNAPSHOT=y
+
+# SD card: long file names (book ids are 36-char UUIDs)
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255

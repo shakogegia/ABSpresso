@@ -58,6 +58,15 @@ static void on_toggle(lv_event_t *e)
     player_toggle();
 }
 
+// Tapping the title opens the details sheet (download controls) for the book shown.
+static void on_title(lv_event_t *e)
+{
+    player_status_t st;
+    player_get_status(&st);
+    int i = player_loaded(&st) ? ui_find_book(st.item_id) : s_resume;
+    if (i >= 0) ui_sheet_show(i);
+}
+
 static void on_back30(lv_event_t *e) { player_seek_relative(-30); flash_state("-30 s"); }
 static void on_fwd30(lv_event_t *e) { player_seek_relative(30); flash_state("+30 s"); }
 static void on_prev_ch(lv_event_t *e) { player_chapter_step(-1); flash_state("Previous chapter"); }
@@ -236,6 +245,8 @@ void playing_build(lv_obj_t *page)
     s_title = ui_label(page, &lv_font_montserrat_20, COLOR_TEXT, 230);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -90);
+    lv_obj_add_flag(s_title, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_title, on_title, LV_EVENT_CLICKED, NULL);
 
     s_chapter = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 230);
     lv_label_set_long_mode(s_chapter, LV_LABEL_LONG_SCROLL_CIRCULAR);
