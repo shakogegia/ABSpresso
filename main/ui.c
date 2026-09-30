@@ -278,6 +278,8 @@ static void audit(lv_obj_t *o, const char *page, const zone_t *z, int nz, const 
 
 static void refresh_timer(lv_timer_t *t)
 {
+    static int status_tick;
+    if (++status_tick % 4 == 0) status_refresh();  // once a second
 #ifdef LAYOUT_AUDIT
     static int tick;
     if (g_book_count && ++tick == 8) {
@@ -345,6 +347,7 @@ void ui_init(void)
     sheet_build(s_scr);
     episodes_build(s_scr);
     libpicker_build(s_scr);
+    status_build(s_scr);  // last, so it stays above the pages and overlays
 
     s_msg = ui_label(s_scr, &lv_font_montserrat_16, COLOR_MUTED, 240);
     lv_label_set_long_mode(s_msg, LV_LABEL_LONG_WRAP);

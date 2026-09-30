@@ -10,6 +10,7 @@
 #include "cover.h"
 #include "player.h"
 #include "storage.h"
+#include "battery.h"
 #include "catalog.h"
 #include "download.h"
 #include "esp_timer.h"
@@ -41,6 +42,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(board_audio_init());
     storage_init();
+    battery_init();
     abs_api_init();
     cover_init();
     player_init();

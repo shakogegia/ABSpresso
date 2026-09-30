@@ -99,6 +99,10 @@ void settings_refresh(void);
 void libpicker_build(lv_obj_t *scr);
 bool libpicker_visible(void);
 
+/* status row above the dock (ui_status.c) */
+void status_build(lv_obj_t *scr);
+void status_refresh(void);
+
 /* pages */
 void home_build(lv_obj_t *page);
 void home_set_books(void);
