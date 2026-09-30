@@ -5,7 +5,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_heap_caps.h"
+#include "esp_cpu.h"
 #include "esp_log.h"
+#include "esp_memory_utils.h"
+#include "freertos/task.h"
 #include "nvs.h"
 
 #if __has_include("secrets.h")
@@ -16,6 +19,35 @@ static const char *TAG = "config";
 
 static app_config_t *s_cfg;  // in PSRAM: the tokens are large
 static SemaphoreHandle_t s_lock;
+
+typedef struct {
+    void (*fn)(void *);
+    void *arg;
+    SemaphoreHandle_t done;
+} flash_job_t;
+
+static void flash_job(void *p)
+{
+    flash_job_t *j = p;
+    j->fn(j->arg);
+    xSemaphoreGive(j->done);
+    vTaskDelete(NULL);
+}
+
+void flash_safe(void (*fn)(void *), void *arg)
+{
+    if (esp_ptr_in_dram((const void *)esp_cpu_get_sp())) {
+        fn(arg);
+        return;
+    }
+    StaticSemaphore_t buf;
+    flash_job_t job = {fn, arg, xSemaphoreCreateBinaryStatic(&buf)};
+    if (xTaskCreate(flash_job, "flash", 4096, &job, uxTaskPriorityGet(NULL), NULL) != pdPASS) {
+        ESP_LOGE(TAG, "no memory to save settings");
+        return;
+    }
+    xSemaphoreTake(job.done, portMAX_DELAY);
+}
 
 static void get_str(nvs_handle_t h, const char *key, char *out, size_t len)
 {
@@ -29,6 +61,7 @@ void config_init(void)
     s_cfg = heap_caps_calloc(1, sizeof(*s_cfg), MALLOC_CAP_SPIRAM);
     s_cfg->skip_back_s = 30;
     s_cfg->skip_fwd_s = 30;
+    s_cfg->rotate180 = true;
 
     nvs_handle_t h;
     if (nvs_open("cfg", NVS_READONLY, &h) == ESP_OK) {
@@ -41,6 +74,11 @@ void config_init(void)
         uint8_t v;
         if (nvs_get_u8(h, "skipb", &v) == ESP_OK) s_cfg->skip_back_s = v;
         if (nvs_get_u8(h, "skipf", &v) == ESP_OK) s_cfg->skip_fwd_s = v;
+        nvs_close(h);
+    }
+    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v;
+        if (nvs_get_u8(h, "rot180", &v) == ESP_OK) s_cfg->rotate180 = v;
         nvs_close(h);
     }
 
@@ -66,7 +104,7 @@ const app_config_t *config_get(void)
     return s_cfg;
 }
 
-static void write_all(void)
+static void write_all(void *unused)
 {
     nvs_handle_t h;
     if (nvs_open("cfg", NVS_READWRITE, &h) != ESP_OK) return;
@@ -80,13 +118,17 @@ static void write_all(void)
     nvs_set_u8(h, "skipf", s_cfg->skip_fwd_s);
     nvs_commit(h);
     nvs_close(h);
+    if (nvs_open("ui", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, "rot180", s_cfg->rotate180);
+    nvs_commit(h);
+    nvs_close(h);
 }
 
 void config_save(const app_config_t *cfg)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     if (cfg != s_cfg) *s_cfg = *cfg;
-    write_all();
+    flash_safe(write_all, NULL);
     xSemaphoreGive(s_lock);
 }
 
@@ -95,7 +137,15 @@ void config_set_tokens(const char *access, const char *refresh)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     strlcpy(s_cfg->access, access, sizeof(s_cfg->access));
     if (refresh) strlcpy(s_cfg->refresh, refresh, sizeof(s_cfg->refresh));
-    write_all();
+    flash_safe(write_all, NULL);
+    xSemaphoreGive(s_lock);
+}
+
+void config_set_rotate(bool rotate180)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_cfg->rotate180 = rotate180;
+    flash_safe(write_all, NULL);
     xSemaphoreGive(s_lock);
 }
 

@@ -13,6 +13,8 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "nvs.h"
+#include "config.h"
+#include "portal.h"
 #include "player.h"
 
 static const char *TAG = "power";
@@ -50,11 +52,8 @@ void power_get_config(power_config_t *out)
     *out = s_cfg;
 }
 
-void power_set_config(const power_config_t *cfg)
+static void save_config(void *unused)
 {
-    s_cfg = *cfg;
-    if (s_screen == SCREEN_ON) board_set_backlight(s_cfg.brightness);
-    s_last_touch_us = esp_timer_get_time();
     nvs_handle_t h;
     if (nvs_open("power", NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_u8(h, "bright", s_cfg.brightness);
@@ -63,6 +62,14 @@ void power_set_config(const power_config_t *cfg)
         nvs_commit(h);
         nvs_close(h);
     }
+}
+
+void power_set_config(const power_config_t *cfg)
+{
+    s_cfg = *cfg;
+    if (s_screen == SCREEN_ON) board_set_backlight(s_cfg.brightness);
+    s_last_touch_us = esp_timer_get_time();
+    flash_safe(save_config, NULL);
 }
 
 /* ---------- screen ---------- */
@@ -155,6 +162,8 @@ static void power_task(void *arg)
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
         const int64_t now = esp_timer_get_time();
+        // Setup shows its progress on screen while you're busy on the phone: stay awake.
+        if (portal_active()) s_last_touch_us = now;
         const int64_t idle_s = (now - s_last_touch_us) / 1000000;
 
         if (s_screen == SCREEN_OFF) {

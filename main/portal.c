@@ -118,12 +118,6 @@ static esp_err_t on_config(httpd_req_t *req)
     const app_config_t *c = config_get();
     power_config_t pc;
     power_get_config(&pc);
-    uint8_t rot = 1;
-    nvs_handle_t h;
-    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) {
-        nvs_get_u8(h, "rot180", &rot);
-        nvs_close(h);
-    }
     // Never send stored passwords or tokens back to the browser.
     cJSON *o = cJSON_CreateObject();
     cJSON_AddStringToObject(o, "ssid", c->wifi_ssid);
@@ -136,7 +130,7 @@ static esp_err_t on_config(httpd_req_t *req)
     cJSON_AddNumberToObject(o, "sleep", pc.sleep_min);
     cJSON_AddNumberToObject(o, "skip_back", c->skip_back_s);
     cJSON_AddNumberToObject(o, "skip_fwd", c->skip_fwd_s);
-    cJSON_AddBoolToObject(o, "rotate", rot);
+    cJSON_AddBoolToObject(o, "rotate", c->rotate180);
     return send_json(req, o);
 }
 
@@ -292,12 +286,7 @@ static void apply(const cJSON *req)
     power_set_config(&pc);
     c->skip_back_s = num(req, "skip_back", 30);
     c->skip_fwd_s = num(req, "skip_fwd", 30);
-    nvs_handle_t h;
-    if (nvs_open("ui", NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_u8(h, "rot180", cJSON_IsTrue(cJSON_GetObjectItem(req, "rotate")));
-        nvs_commit(h);
-        nvs_close(h);
-    }
+    c->rotate180 = cJSON_IsTrue(cJSON_GetObjectItem(req, "rotate"));
 
     config_save(c);
     set_status(true, "All set. Restarting...");

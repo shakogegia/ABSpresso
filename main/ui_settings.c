@@ -7,6 +7,7 @@
 #include "download.h"
 #include "esp_wifi.h"
 #include "board.h"
+#include "config.h"
 #include "nvs.h"
 #include "power.h"
 #include "storage.h"
@@ -31,13 +32,7 @@ static void apply_rotation(bool rotated, bool save)
     s_rotated = rotated;
     board_set_rotated(rotated);
     lv_obj_invalidate(lv_screen_active());
-    if (!save) return;
-    nvs_handle_t h;
-    if (nvs_open("ui", NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_u8(h, "rot180", rotated);
-        nvs_commit(h);
-        nvs_close(h);
-    }
+    if (save) config_set_rotate(rotated);
 }
 
 // Choices the power rows cycle through.
@@ -230,13 +225,7 @@ void settings_refresh(void)
 
 void settings_build(lv_obj_t *parent)
 {
-    uint8_t rot = 1;
-    nvs_handle_t h;
-    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) {
-        nvs_get_u8(h, "rot180", &rot);
-        nvs_close(h);
-    }
-    apply_rotation(rot, false);
+    apply_rotation(config_get()->rotate180, false);
 
     lv_obj_t *table = lv_obj_create(parent);
     lv_obj_remove_style_all(table);

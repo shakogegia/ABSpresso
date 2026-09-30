@@ -3,6 +3,7 @@
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_lvgl_port.h"
 #include "nvs_flash.h"
 #include "abs_api.h"
@@ -39,6 +40,7 @@ void app_main(void)
     }
 
     config_init();  // before anything reads settings (the UI does)
+    ESP_LOGI("main", "reset reason %d", (int)esp_reset_reason());
     ESP_ERROR_CHECK(board_display_init(NULL));
     lvgl_port_lock(0);
     ui_init();
