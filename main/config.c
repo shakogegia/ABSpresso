@@ -12,10 +12,6 @@
 #include "freertos/task.h"
 #include "nvs.h"
 
-#if __has_include("secrets.h")
-#include "secrets.h"
-#endif
-
 static const char *TAG = "config";
 
 static app_config_t *s_cfg;  // in PSRAM: the tokens are large
@@ -92,19 +88,6 @@ void config_init(void)
         nvs_close(h);
     }
 
-    // Development builds can bake in defaults (main/secrets.h); saved settings always win.
-#ifdef WIFI_SSID
-    if (!s_cfg->wifi_ssid[0]) {
-        strlcpy(s_cfg->wifi_ssid, WIFI_SSID, sizeof(s_cfg->wifi_ssid));
-        strlcpy(s_cfg->wifi_pass, WIFI_PASSWORD, sizeof(s_cfg->wifi_pass));
-    }
-#endif
-#ifdef ABS_SERVER
-    if (!s_cfg->server[0]) snprintf(s_cfg->server, sizeof(s_cfg->server), "https://%s", ABS_SERVER);
-#endif
-#ifdef ABS_TOKEN
-    if (!s_cfg->access[0]) strlcpy(s_cfg->access, ABS_TOKEN, sizeof(s_cfg->access));
-#endif
     ESP_LOGI(TAG, "wifi '%s', server %s, %s", s_cfg->wifi_ssid, s_cfg->server,
              s_cfg->refresh[0] ? "signed in" : (s_cfg->access[0] ? "API key" : "no credentials"));
 }

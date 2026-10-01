@@ -151,7 +151,7 @@ main/
   main.c           startup: display, Wi-Fi, library load, refresh loop
   board.c/.h       hardware bring-up: I2C, expander, QSPI LCD, touch, backlight, I2S audio
   wifi.c/.h        station mode, plus the setup access point, scan and test-join
-  config.c/.h      saved settings (Wi-Fi, server, sign-in tokens) in NVS; secrets.h gives defaults
+  config.c/.h      saved settings (Wi-Fi, server, sign-in tokens) in NVS
   portal.c/.h      setup portal: access point, DNS catch-all, web server, apply-and-restart
   portal_page.h    the setup web page (self-contained HTML/JS)
   ui_setup.c       on-screen setup: QR code to join, progress of a save
@@ -171,7 +171,6 @@ main/
   ui_settings.c    Settings view and library picker
   switcher.c/.h    bottom "< Name >" pill shared by Home and Library
   lv_mem_psram.c   LVGL allocator that keeps all UI objects in PSRAM
-  secrets.h.example
 ```
 
 ## Building and flashing
@@ -180,32 +179,18 @@ Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/) **v5.5** (devel
 Managed components (LVGL 9.3, esp_lvgl_port, ST77916/CST816S drivers, esp_audio_codec, esp_jpeg)
 are fetched automatically on the first build.
 
-1. *(Optional)* Create a secrets file (it is git-ignored). Without one, the device starts in
-   setup mode and you configure it from a phone instead (see [Setup portal](#setup-portal)).
+```sh
+. $IDF_PATH/export.sh
+idf.py set-target esp32s3     # first time only
+idf.py -p /dev/tty.usbmodem1101 flash monitor
+```
 
-   ```sh
-   cp main/secrets.h.example main/secrets.h
-   ```
+On macOS, if `export.sh` picks a Python that doesn't have the IDF virtualenv, point it at the
+right one first, e.g. `export IDF_PYTHON_ENV_PATH=~/.espressif/python_env/idf5.5_py3.14_env`.
 
-   and fill in (these become the defaults until something is saved from the setup portal):
-
-   | Define | Value |
-   | --- | --- |
-   | `WIFI_SSID`, `WIFI_PASSWORD` | your 2.4 GHz network |
-   | `ABS_SERVER` | server host name only, e.g. `abs.example.com` (HTTPS is assumed) |
-   | `ABS_TOKEN` | an Audiobookshelf API key (Settings → API Keys) |
-
-2. Build and flash:
-
-   ```sh
-   . $IDF_PATH/export.sh
-   idf.py set-target esp32s3     # first time only
-   idf.py -p /dev/tty.usbmodem1101 flash monitor
-   ```
-
-   On macOS, if `export.sh` picks a Python that doesn't have the IDF virtualenv, point it at
-   the right one first, e.g.
-   `export IDF_PYTHON_ENV_PATH=~/.espressif/python_env/idf5.5_py3.14_env`.
+No credentials are built into the firmware. On first boot the device starts in setup mode; connect
+from a phone to enter your Wi-Fi and Audiobookshelf details (see [Setup portal](#setup-portal)).
+Settings are kept in NVS, so reflashing doesn't lose them (`idf.py erase-flash` does).
 
 The console is on the board's native USB (USB-Serial/JTAG).
 

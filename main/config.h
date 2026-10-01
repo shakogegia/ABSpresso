@@ -1,7 +1,7 @@
 #pragma once
 
 // Device configuration, stored in NVS and set up from a phone through the setup portal
-// (portal.c). secrets.h, if present, only supplies defaults for anything not yet saved.
+// (portal.c). Nothing is built in: a new device starts in setup.
 
 #include <stdbool.h>
 #include <stddef.h>
