@@ -1,4 +1,6 @@
-# ABS Player: an Audiobookshelf client for the ESP32-S3 round display
+<p align="center"><img src="docs/brand/banner.png" alt="ABSpresso: an espresso-sized Audiobookshelf player for an ESP32 with a 1.85-inch round display"></p>
+
+# ABSpresso: an Audiobookshelf client for the ESP32-S3 round display
 
 A small, self-contained audiobook player that streams from an
 [Audiobookshelf](https://www.audiobookshelf.org/) server over Wi-Fi and plays through the board's
@@ -281,6 +283,19 @@ Wi-Fi network and shows how to reach it:
 Username sign-in stores the session's access and refresh tokens (never your password). The
 device renews the access token when the server rejects it, and asks you to sign in again if the
 refresh token has expired too. Blank password fields keep the saved Wi-Fi password or sign-in.
+
+## Logo and artwork
+
+<img src="docs/brand/icon.png" width="96" align="right" alt="ABSpresso icon">
+
+The ABSpresso artwork lives in [`docs/brand/`](docs/brand):
+
+| File | Use |
+| --- | --- |
+| `icon.svg`, `icon.png` | app icon (512 px design, 1024 px PNG) |
+| `logo.png` | horizontal logo with the "A shot of story" tagline |
+| `banner.png` | the banner at the top of this README |
+| `social-preview.png` | GitHub social preview (Settings → General → Social preview), 1280×640 design |
 
 ## Known limitations
 
