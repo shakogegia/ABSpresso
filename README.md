@@ -293,8 +293,7 @@ The ABSpresso artwork lives in [`docs/brand/`](docs/brand):
 | File | Use |
 | --- | --- |
 | `icon.svg`, `icon.png` | app icon (512 px design, 1024 px PNG) |
-| `logo.png` | horizontal logo with the "A shot of story" tagline |
-| `banner.png` | the banner at the top of this README |
+| `banner.png` | logo banner, used at the top of this README |
 | `social-preview.png` | GitHub social preview (Settings → General → Social preview), 1280×640 design |
 
 ## Known limitations
