@@ -16,6 +16,7 @@
 #include "esp_lvgl_port.h"
 #include "mbedtls/base64.h"
 #include "player.h"
+#include "power.h"
 #include "ui_priv.h"
 
 void home_debug_next_row(void);
@@ -104,6 +105,8 @@ static void locked(void (*fn)(int), int arg)
 }
 
 static void show_page(int p) { ui_show_page((ui_page_t)p); }
+void settings_debug_view(int view);
+static void settings_view(int v) { settings_debug_view(v); }
 static void show_sheet(int i) { ui_sheet_show(i); }
 static void hide_sheet(int unused)
 {
@@ -125,10 +128,10 @@ static void __attribute__((unused)) capture_task(void *arg)
     lv_tick_set_cb(virtual_tick);
     lvgl_port_unlock();
     printf("CAPTURE BEGIN\n");
+    power_keep_awake(true);  // screen-off stops LVGL's timers: animations and refreshes would stall
 
 #ifdef PORTAL_TEST
-    locked(show_page, PAGE_LIBRARY);
-    locked(lib_view, 3);  // Settings
+    locked(show_page, PAGE_SETTINGS);
     advance(300);
     shot("settings", 0);
     lvgl_port_lock(0);
@@ -177,9 +180,15 @@ static void __attribute__((unused)) capture_task(void *arg)
     locked(lib_view, 2);  // Authors
     advance(200);
     shot("library_authors", 0);
-    locked(lib_view, 3);  // Settings
+    locked(show_page, PAGE_SETTINGS);
+    locked(settings_view, 0);
     advance(200);
-    shot("library_settings", 0);
+    shot("settings_server", 0);
+    locked(settings_view, 1);
+    advance(200);
+    shot("settings_device", 0);
+    locked(settings_view, 0);
+    locked(show_page, PAGE_LIBRARY);
     locked(lib_view, 0);  // Covers
     wait_real(4000);
     shot("library_covers", 0);
@@ -196,7 +205,7 @@ static void __attribute__((unused)) capture_task(void *arg)
     frame("carousel", 900);
     for (int i = 0; i < 5; i++) {
         locked(lib_step, 1);
-        for (int f = 0; f < 5; f++) {
+            for (int f = 0; f < 5; f++) {
             advance(40);
             frame("carousel", 40);
         }

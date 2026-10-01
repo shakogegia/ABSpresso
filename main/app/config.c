@@ -143,6 +143,15 @@ void config_set_tokens(const char *access, const char *refresh)
     xSemaphoreGive(s_lock);
 }
 
+void config_set_skip(int back_s, int fwd_s)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_cfg->skip_back_s = back_s;
+    s_cfg->skip_fwd_s = fwd_s;
+    flash_safe(write_all, NULL);
+    xSemaphoreGive(s_lock);
+}
+
 void config_set_rotate(bool rotate180)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);

@@ -113,6 +113,13 @@ static void screen_off(void)
     ESP_LOGI(TAG, "screen off");
 }
 
+static volatile bool s_keep_awake;
+
+void power_keep_awake(bool on)
+{
+    s_keep_awake = on;
+}
+
 bool power_filter_touch(bool pressed)
 {
     if (s_swallow) {
@@ -163,7 +170,7 @@ static void power_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
         const int64_t now = esp_timer_get_time();
         // Setup shows its progress on screen while you're busy on the phone: stay awake.
-        if (portal_active()) s_last_touch_us = now;
+        if (portal_active() || s_keep_awake) s_last_touch_us = now;
         const int64_t idle_s = (now - s_last_touch_us) / 1000000;
 
         if (s_screen == SCREEN_OFF) {

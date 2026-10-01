@@ -81,6 +81,7 @@ static void set_libraries(abs_library_t *libs, int n)
     free(s_libs);
     s_libs = libs;
     s_lib_count = n;
+    ESP_LOGI(TAG, "%d librar%s on the server", n, n == 1 ? "y" : "ies");
     ensure_selection();
     const abs_library_t *l = current();
     abs_set_library_name(l ? l->name : "");

@@ -10,6 +10,7 @@
 
 static lv_obj_t *s_backdrop, *s_arc, *s_vol_arc, *s_title, *s_chapter, *s_state, *s_play_label, *s_time, *s_remaining;
 static const lv_image_dsc_t *s_backdrop_src;
+static lv_obj_t *s_skip_lbl[2];  // -N / +N on the skip buttons
 static bool s_arc_dragging, s_vol_dragging;
 static uint32_t s_state_override_until;
 static int s_resume = -1;  // book offered for resume while the player is idle
@@ -69,9 +70,24 @@ static void on_title(lv_event_t *e)
 }
 
 // Skip buttons; how far they jump is a setting (config.h).
+// Skip lengths come from the settings at tap time (Settings > Device can change them).
+static int skip_seconds(int dir)
+{
+    return dir < 0 ? -config_get()->skip_back_s : config_get()->skip_fwd_s;
+}
+
+static void set_skip_labels(void)
+{
+    char lbl[8];
+    snprintf(lbl, sizeof(lbl), "%+d", skip_seconds(-1));
+    if (strcmp(lv_label_get_text(s_skip_lbl[0]), lbl) != 0) lv_label_set_text(s_skip_lbl[0], lbl);
+    snprintf(lbl, sizeof(lbl), "%+d", skip_seconds(1));
+    if (strcmp(lv_label_get_text(s_skip_lbl[1]), lbl) != 0) lv_label_set_text(s_skip_lbl[1], lbl);
+}
+
 static void on_skip(lv_event_t *e)
 {
-    const int s = (int)(intptr_t)lv_event_get_user_data(e);
+    const int s = skip_seconds((int)(intptr_t)lv_event_get_user_data(e));
     player_seek_relative(s);
     char buf[16];
     snprintf(buf, sizeof(buf), "%+d s", s);
@@ -180,6 +196,7 @@ void playing_refresh(void)
     player_status_t st;
     player_get_status(&st);
     if (!s_vol_dragging) lv_arc_set_value(s_vol_arc, st.volume);
+    set_skip_labels();
     if (!player_loaded(&st)) {
         refresh_idle();
         return;
@@ -245,6 +262,7 @@ static lv_obj_t *side_arc(lv_obj_t *page, int start, int end, int range, lv_even
     lv_obj_center(a);
     lv_arc_set_bg_angles(a, start, end);
     lv_arc_set_range(a, 0, range);
+    lv_arc_set_value(a, 0);  // until set, LVGL draws a default indicator ignoring the angles above
     lv_obj_set_style_arc_width(a, 6, LV_PART_MAIN);
     lv_obj_set_style_arc_width(a, 6, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(a, COLOR_CARD, LV_PART_MAIN);
@@ -269,8 +287,9 @@ void playing_build(lv_obj_t *page)
 
     // Two side arcs, sized like the Library's A-Z ring: progress on the right (fills from the top,
     // drag to scrub the chapter) and volume on the left (fills from the bottom).
-    s_arc = side_arc(page, 305, 55, 1000, on_arc_event);
-    s_vol_arc = side_arc(page, 125, 235, 100, on_volume_arc);
+    // The top ends stop short of 1 and 11 o'clock, clear of the dock's outer buttons.
+    s_arc = side_arc(page, 312, 55, 1000, on_arc_event);
+    s_vol_arc = side_arc(page, 125, 228, 100, on_volume_arc);
     lv_obj_t *vol_icon = ui_label(page, &ui_font_14, COLOR_MUTED, 0);
     lv_label_set_text(vol_icon, LV_SYMBOL_VOLUME_MAX);
     lv_obj_align(vol_icon, LV_ALIGN_CENTER, -146, 0);
@@ -297,14 +316,13 @@ void playing_build(lv_obj_t *page)
     lv_obj_set_style_text_color(s_play_label, lv_color_black(), 0);
     lv_obj_align(play, LV_ALIGN_CENTER, 0, 4);
 
-    char lbl[8];
-    const int back = config_get()->skip_back_s, fwd = config_get()->skip_fwd_s;
-    snprintf(lbl, sizeof(lbl), "-%d", back);
-    lv_obj_t *b30 = ui_round_button(page, 60, lbl, &ui_font_20, on_skip, (void *)(intptr_t)-back);
+    lv_obj_t *b30 = ui_round_button(page, 60, "", &ui_font_20, on_skip, (void *)(intptr_t)-1);
     lv_obj_align(b30, LV_ALIGN_CENTER, -94, 4);
-    snprintf(lbl, sizeof(lbl), "+%d", fwd);
-    lv_obj_t *f30 = ui_round_button(page, 60, lbl, &ui_font_20, on_skip, (void *)(intptr_t)fwd);
+    lv_obj_t *f30 = ui_round_button(page, 60, "", &ui_font_20, on_skip, (void *)(intptr_t)1);
     lv_obj_align(f30, LV_ALIGN_CENTER, 94, 4);
+    s_skip_lbl[0] = lv_obj_get_child(b30, 0);
+    s_skip_lbl[1] = lv_obj_get_child(f30, 0);
+    set_skip_labels();
 
     s_time = ui_label(page, &ui_font_16, COLOR_TEXT, 200);
     lv_obj_align(s_time, LV_ALIGN_CENTER, 0, 58);

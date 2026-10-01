@@ -1,4 +1,4 @@
-// Library: Covers / Books / Authors / Settings, chosen with the switcher pill at the bottom (same
+// Library: Covers / Books / Authors, chosen with the switcher pill at the bottom (same
 // layout as Home). A ring segment on the right edge scrubs A-Z through whichever list or carousel
 // is showing, with the current letter shown large while dragging.
 
@@ -14,20 +14,19 @@ typedef enum {
     VIEW_COVERS,
     VIEW_BOOKS,
     VIEW_AUTHORS,
-    VIEW_SETTINGS,
     VIEW_COUNT,
     VIEW_AUTHOR_BOOKS = VIEW_COUNT,  // drilled into one author (shown under "Authors")
 } view_t;
 
 // "Books" becomes "Shows" in a podcast library.
-static const char *s_names[VIEW_COUNT] = {"Covers", "Books", "Authors", "Settings"};
+static const char *s_names[VIEW_COUNT] = {"Covers", "Books", "Authors"};
 
 // Lists fill the space between the dock and the switcher, clear of the ring (see ui_priv.h).
 #define LIST_W 236
 #define LIST_H (PAGE_SWITCHER_Y - PAGE_TOP - 8)
 #define LIST_X (-8)
 
-static lv_obj_t *s_list, *s_authors, *s_author_books, *s_settings, *s_ring, *s_bubble, *s_bubble_label;
+static lv_obj_t *s_list, *s_authors, *s_author_books, *s_ring, *s_bubble, *s_bubble_label;
 static carousel_t *s_carousel;
 static switcher_t *s_switcher;
 static view_t s_view;
@@ -101,11 +100,8 @@ static void apply_view(void)
     set_hidden(s_list, s_view != VIEW_BOOKS);
     set_hidden(s_authors, s_view != VIEW_AUTHORS);
     set_hidden(s_author_books, s_view != VIEW_AUTHOR_BOOKS);
-    set_hidden(s_settings, s_view != VIEW_SETTINGS);
-    set_hidden(s_ring, s_view == VIEW_SETTINGS);
     carousel_set_hidden(s_carousel, s_view != VIEW_COVERS);
     switcher_select(s_switcher, s_view == VIEW_AUTHOR_BOOKS ? VIEW_AUTHORS : s_view);
-    if (s_view == VIEW_SETTINGS) settings_refresh();
     lv_obj_update_layout(s_ring);
     sync_ring();
 }
@@ -256,15 +252,6 @@ void library_build(lv_obj_t *page)
     const carousel_cfg_t cfg = {.y = PAGE_CAROUSEL_Y, .x = 0, .width = 256, .title_w = 240, .sub_w = 230};
     s_carousel = carousel_create(page, &cfg);
 
-    s_settings = lv_obj_create(page);
-    lv_obj_remove_style_all(s_settings);
-    lv_obj_set_size(s_settings, LIST_W + 16, LIST_H);
-    lv_obj_align(s_settings, LV_ALIGN_TOP_MID, 0, PAGE_TOP);
-    // Scrolls: there are more settings than fit above the switcher.
-    lv_obj_remove_flag(s_settings, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_scrollbar_mode(s_settings, LV_SCROLLBAR_MODE_OFF);
-    settings_build(s_settings);
-
     s_switcher = switcher_create(page, PAGE_SWITCHER_Y, (const char *const *)s_names, VIEW_COUNT, on_switch);
 
     // Right-edge ring segment from 1 o'clock to 4 o'clock (top = A, bottom = Z), ending above the
@@ -359,8 +346,6 @@ void library_refresh(void)
         carousel_refresh(s_carousel);
         int n = carousel_count(s_carousel);
         if (!s_scrubbing && n > 1) lv_arc_set_value(s_ring, 1000 * carousel_pos(s_carousel) / (n - 1));
-    } else if (s_view == VIEW_SETTINGS) {
-        settings_refresh();
     }
 }
 

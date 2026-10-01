@@ -24,8 +24,12 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
   left/right on the covers to browse; switch shelf with the arrows (or a swipe) on the shelf name
   at the bottom, where dots show which shelf you're on.
 - **Library:** Covers, Books (A-Z list) and Authors, switched with the same bottom pill as Home,
-  with an A-Z scrub ring on the right edge. A Settings view there shows library, Wi-Fi and SD
-  card info, refreshes the library, and switches between the server's libraries.
+  with an A-Z scrub ring on the right edge.
+- **Settings:** its own page (the gear in the dock), with two views on the bottom pill. *Server*:
+  server, who's signed in (or that an API key is used), library, Wi-Fi, plus buttons to switch
+  library, refresh it, and open Wi-Fi & login setup. *Device*: brightness, screen-off and sleep
+  timers, skip lengths, rotation, Bluetooth (placeholder until Bluetooth audio exists), SD card
+  and firmware version.
 - **Podcasts:** podcast libraries work too. Shows appear like books; tapping one lists its
   episodes (in progress first, then newest), and episodes play, resume and sync progress like
   books.
@@ -46,16 +50,16 @@ nicer for "just carry on with my book". This firmware turns an inexpensive dev b
 
 Captured on the device itself (see [Capturing screenshots](#capturing-screenshots)).
 
-| Home | Library | Now Playing |
-| :---: | :---: | :---: |
-| <img src="docs/media/home_continue.png" width="240"> | <img src="docs/media/library_list.png" width="240"> | <img src="docs/media/player_resume.png" width="240"> |
-| <img src="docs/media/home_recent.png" width="240"> | <img src="docs/media/library_covers.png" width="240"> | <img src="docs/media/library_authors.png" width="240"> |
+| Home | Recently Added | Library covers | Library books |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/media/home_continue.png" width="200"> | <img src="docs/media/home_recent.png" width="200"> | <img src="docs/media/library_covers.png" width="200"> | <img src="docs/media/library_list.png" width="200"> |
+| **Authors** | **Now Playing** | **Settings: Device** | **Book details** |
+| <img src="docs/media/library_authors.png" width="200"> | <img src="docs/media/player_resume.png" width="200"> | <img src="docs/media/settings_device.png" width="200"> | <img src="docs/media/book_sheet.png" width="200"> |
 
 | Browsing covers | Resuming a book |
 | :---: | :---: |
 | <img src="docs/media/carousel.gif" width="300"> | <img src="docs/media/playing.gif" width="300"> |
 
-<img src="docs/media/book_sheet.png" width="200" align="right">
 <img src="docs/media/library_scrub.png" width="200" align="right">
 
 Dragging the ring on the Library page's right edge jumps through the list A-Z, with the current
@@ -179,7 +183,7 @@ main/
       ui_home.c          Home shelves
       ui_library.c       Library covers / books / authors + A-Z ring
       ui_player.c        Now Playing
-      ui_settings.c      Settings view and library picker
+      ui_settings.c      Settings page and library picker
       ui_setup.c         setup screen (QR code to join the setup network)
       ui_sheet.c         book details sheet (play / download / remove)
       ui_episodes.c      podcast episode list

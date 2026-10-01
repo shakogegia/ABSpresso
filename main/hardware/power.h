@@ -26,3 +26,5 @@ void power_set_config(const power_config_t *cfg);
 // Called by the touch reader on every poll. Returns whether LVGL should see the press (false
 // while swallowing the touch that woke the screen).
 bool power_filter_touch(bool pressed);
+// Holds the screen on and the device awake (UI capture builds; setup does this itself).
+void power_keep_awake(bool on);

@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include "ui_priv.h"
 
-#define W 230
-#define H 36
+#define W SWITCHER_W
+#define H SWITCHER_H
 
 struct switcher {
     lv_obj_t *pill, *name, *prev, *next;

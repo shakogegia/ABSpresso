@@ -14,6 +14,7 @@
 #include "download.h"
 #include "player.h"
 #include "ui_priv.h"
+#include "src/core/lv_obj_event_private.h"  // lv_hit_test_info_t
 #include "text.h"
 
 #define RECENT_MAX 30
@@ -192,12 +193,31 @@ void ui_play_book(int book_index)
 
 /* ---------- pages and dock ---------- */
 
+static bool __attribute__((unused)) is_page(const lv_obj_t *o)
+{
+    for (int i = 0; i < PAGE_COUNT; i++) {
+        if (o == s_pages[i]) return true;
+    }
+    return false;
+}
+
 static void dock_highlight(void)
 {
     for (int i = 0; i < PAGE_COUNT; i++) {
         bool on = i == (int)s_page;
         lv_obj_set_style_bg_color(s_dock[i], on ? COLOR_ACCENT : COLOR_CARD, 0);
         lv_obj_set_style_text_color(lv_obj_get_child(s_dock[i], 0), on ? lv_color_black() : COLOR_TEXT, 0);
+    }
+}
+
+static void refresh_page(void)
+{
+    switch (s_page) {
+    case PAGE_HOME:     home_refresh(); break;
+    case PAGE_LIBRARY:  library_refresh(); break;
+    case PAGE_PLAYER:   playing_refresh(); break;
+    case PAGE_SETTINGS: settings_refresh(); break;
+    default: break;
     }
 }
 
@@ -209,9 +229,21 @@ void ui_show_page(ui_page_t page)
         else lv_obj_add_flag(s_pages[i], LV_OBJ_FLAG_HIDDEN);
     }
     dock_highlight();
+    refresh_page();  // straight away, not on the next tick: no flash of stale or empty values
     if (page == PAGE_HOME && g_book_count && lv_tick_elaps(s_books_loaded_at) > STALE_MS) {
         s_refresh_requested = true;  // pick up progress changes from this and other devices
     }
+}
+
+// Dock buttons take touches inside their circle only: the square around the outer buttons'
+// circles reaches the side arcs and the A-Z ring.
+static void round_hit_test(lv_event_t *e)
+{
+    lv_hit_test_info_t *info = lv_event_get_param(e);
+    lv_area_t a;
+    lv_obj_get_coords(lv_event_get_target(e), &a);
+    const int32_t r = lv_area_get_width(&a) / 2, dx = info->point->x - (a.x1 + r), dy = info->point->y - (a.y1 + r);
+    info->res = dx * dx + dy * dy <= r * r;
 }
 
 static void on_dock(lv_event_t *e)
@@ -255,7 +287,23 @@ static void audit(lv_obj_t *o, const char *page, const zone_t *z, int nz, const 
         cl.x2 = LV_MIN(a.x2, clip->x2);
         cl.y2 = LV_MIN(a.y2, clip->y2);
         if (cl.x1 > cl.x2 || cl.y1 > cl.y2) continue;
-        if (lv_obj_has_flag(c, LV_OBJ_FLAG_CLICKABLE) && c != s_pages[0] && c != s_pages[1] && c != s_pages[2]) {
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_CLICKABLE) && !is_page(c) && lv_obj_has_flag(c, LV_OBJ_FLAG_ADV_HITTEST)) {
+            // Round buttons: test the circle's farthest point from the centre and its angular span.
+            const float rad = lv_area_get_width(&a) / 2.0f, cx = a.x1 + rad - 180, cy = a.y1 + rad - 180;
+            const float d = sqrtf(cx * cx + cy * cy), ang = atan2f(cy, cx) * 57.2958f;
+            for (int zi = 0; zi < nz; zi++) {
+                if (d + rad <= z[zi].r) continue;
+                // Angular half-width of the part of the circle beyond the zone radius.
+                const float cosv = (d * d + z[zi].r * z[zi].r - rad * rad) / (2 * d * z[zi].r);
+                const float half = acosf(cosv > 1 ? 1 : cosv) * 57.2958f;
+                float lo = z[zi].lo, hi = z[zi].hi, a2 = ang;
+                if (lo > 180 && a2 < 0) a2 += 360;
+                if (a2 + half >= lo && a2 - half <= hi) {
+                    printf("AUDIT %s: round obj at (%.0f,%.0f) r=%.0f reaches %.0f..%.0f deg\n", page, cx + 180,
+                           cy + 180, rad, a2 - half, a2 + half);
+                }
+            }
+        } else if (lv_obj_has_flag(c, LV_OBJ_FLAG_CLICKABLE) && !is_page(c)) {
             int xs[2] = {cl.x1 - 180, cl.x2 - 180}, ys[2] = {cl.y1 - 180, cl.y2 - 180};
             for (int k = 0; k < 4; k++) {
                 float x = xs[k & 1], y = ys[k >> 1], r = sqrtf(x * x + y * y), ang = atan2f(y, x) * 57.2958f;
@@ -286,7 +334,7 @@ static void refresh_timer(lv_timer_t *t)
     if (g_book_count && ++tick == 8) {
         const lv_area_t full = {0, 0, 359, 359};
         const zone_t lib[] = {{160, -66, 36}};
-        const zone_t np[] = {{150, -61, 61}, {150, 119, 241}};
+        const zone_t np[] = {{150, -54, 61}, {150, 119, 234}};
         for (int p = 0; p < PAGE_COUNT; p++) {
             ui_show_page(p);
             lv_obj_update_layout(s_scr);
@@ -316,12 +364,7 @@ static void refresh_timer(lv_timer_t *t)
         return;
     }
 
-    switch (s_page) {
-    case PAGE_HOME:    home_refresh(); break;
-    case PAGE_LIBRARY: library_refresh(); break;
-    case PAGE_PLAYER:  playing_refresh(); break;
-    default: break;
-    }
+    refresh_page();
     // A subtle cue on the dock when something is playing.
     player_status_t st;
     player_get_status(&st);
@@ -336,18 +379,22 @@ void ui_init(void)
     lv_obj_set_style_bg_color(s_scr, COLOR_BG, 0);
     lv_obj_remove_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    void (*builders[PAGE_COUNT])(lv_obj_t *) = {home_build, library_build, playing_build};
+    void (*builders[PAGE_COUNT])(lv_obj_t *) = {home_build, library_build, playing_build, settings_build};
     for (int i = 0; i < PAGE_COUNT; i++) {
         s_pages[i] = ui_page_container(s_scr);
         builders[i](s_pages[i]);
     }
 
     // Dock last, so it is above the pages.
-    static const char *icons[PAGE_COUNT] = {LV_SYMBOL_HOME, LV_SYMBOL_LIST, LV_SYMBOL_AUDIO};
+    static const char *icons[PAGE_COUNT] = {LV_SYMBOL_HOME, LV_SYMBOL_LIST, LV_SYMBOL_PLAY,
+                                                LV_SYMBOL_SETTINGS};
     for (int i = 0; i < PAGE_COUNT; i++) {
         s_dock[i] = ui_round_button(s_scr, 38, icons[i], &ui_font_16, on_dock, (void *)(intptr_t)i);
-        lv_obj_align(s_dock[i], LV_ALIGN_TOP_MID, (i - 1) * 46, DOCK_Y);
+        // 44 px apart: the outer buttons stay inside the Library's A-Z ring.
+        lv_obj_align(s_dock[i], LV_ALIGN_TOP_MID, (2 * i - (PAGE_COUNT - 1)) * 22, DOCK_Y);
         lv_obj_set_style_border_color(s_dock[i], COLOR_ACCENT, 0);
+        lv_obj_add_flag(s_dock[i], LV_OBJ_FLAG_ADV_HITTEST);
+        lv_obj_add_event_cb(s_dock[i], round_hit_test, LV_EVENT_HIT_TEST, NULL);
     }
 
     sheet_build(s_scr);
@@ -387,6 +434,7 @@ void ui_set_libraries(const abs_library_t *libs, int count, const char *selected
     s_lib_count = count;
     strlcpy(s_lib_selected, selected_id, sizeof(s_lib_selected));
     library_names_changed();
+    settings_libraries_changed();
 }
 
 const abs_library_t *ui_libraries(int *count, const char **selected_id)

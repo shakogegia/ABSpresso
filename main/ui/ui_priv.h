@@ -32,6 +32,7 @@ typedef enum {
     PAGE_HOME,
     PAGE_LIBRARY,
     PAGE_PLAYER,
+    PAGE_SETTINGS,
     PAGE_COUNT,
 } ui_page_t;
 
@@ -94,9 +95,11 @@ void ui_episodes_refresh(void);
 void ui_episodes_hide(void);
 bool ui_episodes_visible(void);
 
-/* settings view inside the Library page (ui_settings.c) */
-void settings_build(lv_obj_t *parent);
+/* Settings page (ui_settings.c) */
+void settings_build(lv_obj_t *page);
 void settings_refresh(void);
+// The server's library list changed (enables choosing between them).
+void settings_libraries_changed(void);
 void libpicker_build(lv_obj_t *scr);
 bool libpicker_visible(void);
 

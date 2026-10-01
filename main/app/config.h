@@ -27,6 +27,8 @@ void config_save(const app_config_t *cfg);
 void config_set_tokens(const char *access, const char *refresh);
 // Saves the screen rotation preference.
 void config_set_rotate(bool rotate180);
+// Saves the Now Playing skip lengths (seconds).
+void config_set_skip(int back_s, int fwd_s);
 // Wi-Fi, a server and a credential are all present.
 bool config_complete(void);
 
