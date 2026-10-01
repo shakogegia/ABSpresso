@@ -134,7 +134,7 @@ static void __attribute__((unused)) capture_task(void *arg)
     lvgl_port_lock(0);
     ui_setup_show();
     lvgl_port_unlock();
-    advance(1500);
+    wait_real(4500);  // the setup network starts after a ~3 s scan
     shot("setup", 0);
     printf("CAPTURE DONE\n");
     vTaskDelete(NULL);

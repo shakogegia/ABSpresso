@@ -269,7 +269,7 @@ Wi-Fi network and shows how to reach it:
 
 <p align="center"><img src="docs/media/setup.png" width="240" alt="Setup screen with QR code"></p>
 
-1. Scan the QR code with a phone camera (or join `ABS-Player-XXXX` with the password shown).
+1. Scan the QR code with a phone camera (or join `ABSpresso-XXXX` with the password shown).
    The network uses WPA2 with a fresh random password each time.
 2. The setup page usually opens by itself (captive portal); otherwise browse to
    `http://192.168.4.1`.

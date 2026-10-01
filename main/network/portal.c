@@ -325,7 +325,7 @@ void portal_start(void)
     if (!s_lock) s_lock = xSemaphoreCreateMutex();
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-    snprintf(s_ssid, sizeof(s_ssid), "ABS-Player-%02X%02X", mac[4], mac[5]);
+    snprintf(s_ssid, sizeof(s_ssid), "ABSpresso-%02X%02X", mac[4], mac[5]);
     snprintf(s_pass, sizeof(s_pass), "%08lu", (unsigned long)(esp_random() % 100000000UL));
     // The setup task scans for networks first, then brings the access point up (a scan takes
     // seconds, so keep it off the caller, which holds the UI lock).

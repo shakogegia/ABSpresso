@@ -6,7 +6,7 @@
 static const char PORTAL_PAGE[] =
 "<!doctype html><html><head><meta charset=utf-8>"
 "<meta name=viewport content='width=device-width,initial-scale=1'>"
-"<title>ABS Player setup</title><style>"
+"<title>ABSpresso setup</title><style>"
 ":root{--bg:#101418;--card:#1e252c;--text:#f2f2f2;--muted:#8c96a0;--accent:#f0a030}"
 "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px system-ui,sans-serif}"
 "main{max-width:480px;margin:0 auto;padding:16px}h1{font-size:22px;margin:8px 0 16px}"
@@ -20,7 +20,7 @@ static const char PORTAL_PAGE[] =
 "button:disabled{opacity:.5}#status{margin-top:12px;min-height:22px;text-align:center}"
 ".tabs{display:flex;gap:8px;margin-bottom:4px}.tabs label{flex:1;margin:0;text-align:center;padding:8px;border-radius:8px;background:#0c1014;color:var(--text)}"
 ".tabs input{display:none}.tabs input:checked+span{color:var(--accent)}"
-"</style></head><body><main><h1>ABS Player setup</h1>"
+"</style></head><body><main><h1>ABSpresso setup</h1>"
 "<section><h2>Wi-Fi</h2>"
 "<label for=ssid>Network</label><select id=ssid><option>Scanning...</option></select>"
 "<input id=ssid_other placeholder='Network name' style='display:none;margin-top:8px'>"

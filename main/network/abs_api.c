@@ -17,8 +17,8 @@
 static const char *TAG = "abs";
 
 // The server's reverse proxy rejects some default user agents.
-#define USER_AGENT "abs-esp32/0.1"
-#define DEVICE_NAME "ESP32 ABS Player"
+#define USER_AGENT "ABSpresso/0.1"
+#define DEVICE_NAME "ABSpresso"
 
 // "Bearer <token>", replaced when the access token is refreshed; s_auth_gen counts refreshes.
 static char *s_auth;
