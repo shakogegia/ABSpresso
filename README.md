@@ -75,7 +75,7 @@ card.
 | Audio | PCM5101 I2S DAC + NS8002 amplifier, onboard speaker |
 | IO expander | TCA9554 (LCD/touch resets, amp enable) |
 
-Pin assignments used (see `main/board.c`):
+Pin assignments used (see `main/hardware/board.c`):
 
 | Function | GPIO |
 | --- | --- |
@@ -90,7 +90,7 @@ Pin assignments used (see `main/board.c`):
 **Board revisions matter.** Waveshare ships two audio variants of this board. V2 has an ES8311
 codec and ES7210 microphone ADC on I2C, and Waveshare's demo code targets it. V1, which this
 firmware targets, has a PCM5101 DAC with no control bus, so volume is applied in software. If
-your I2C scan shows devices at 0x18/0x40 you have V2, and `board_audio_*` in `main/board.c`
+your I2C scan shows devices at 0x18/0x40 you have V2, and `board_audio_*` in `main/hardware/board.c`
 needs porting to the ES8311.
 
 ## How playback works
@@ -148,29 +148,39 @@ server's older value.
 
 ```
 main/
-  main.c           startup: display, Wi-Fi, library load, refresh loop
-  board.c/.h       hardware bring-up: I2C, expander, QSPI LCD, touch, backlight, I2S audio
-  wifi.c/.h        station mode, plus the setup access point, scan and test-join
-  config.c/.h      saved settings (Wi-Fi, server, sign-in tokens) in NVS
-  portal.c/.h      setup portal: access point, DNS catch-all, web server, apply-and-restart
-  portal_page.h    the setup web page (self-contained HTML/JS)
-  ui_setup.c       on-screen setup: QR code to join, progress of a save
-  abs_api.c/.h     Audiobookshelf REST client (library, progress, sessions, covers, HLS segments)
-  player.c/.h      streaming player: fetch / decode / control tasks
-  catalog.c/.h     selected library, per-library SD cache, loading from cache or server
-  cover.c/.h       cover download (SD-cached), JPEG decode and PSRAM LRU cache
-  storage.c/.h     SD card mount and safe file helpers
-  download.c/.h    background book downloads and offline progress
-  carousel.c/.h    reusable virtual cover carousel (3 card objects, any number of books)
-  ui.c, ui_priv.h  UI shell: dock, pages, shared helpers, derived book lists
-  ui_home.c        Home shelves
-  ui_library.c     Library list / covers / authors + A-Z ring
-  ui_player.c      Now Playing
-  ui_sheet.c       book details sheet (play / download / remove)
-  ui_episodes.c    podcast episode list
-  ui_settings.c    Settings view and library picker
-  switcher.c/.h    bottom "< Name >" pill shared by Home and Library
-  lv_mem_psram.c   LVGL allocator that keeps all UI objects in PSRAM
+  main.c                 startup: display, Wi-Fi, library load, refresh loop
+  hardware/
+    board.c/.h           bring-up: I2C, expander, QSPI LCD, touch, backlight, I2S audio
+    battery.c/.h         battery voltage, charge state inference
+    power.c/.h           dimming, screen off, deep sleep, CPU frequency
+    storage.c/.h         SD card mount and safe file helpers
+  network/
+    wifi.c/.h            station mode, plus the setup access point, scan and test-join
+    portal.c/.h          setup portal: access point, DNS catch-all, web server, apply-and-restart
+    portal_page.h        the setup web page (self-contained HTML/JS)
+    abs_api.c/.h         Audiobookshelf REST client (sign-in, library, progress, sessions, covers, HLS)
+  app/
+    config.c/.h          saved settings (Wi-Fi, server, sign-in tokens) in NVS
+    catalog.c/.h         selected library, per-library SD cache, loading from cache or server
+    cover.c/.h           cover download (SD-cached), JPEG decode and PSRAM LRU cache
+    download.c/.h        background book downloads and offline progress
+    player.c/.h          streaming player: fetch / decode / control tasks
+  ui/
+    ui.c, ui.h, ui_priv.h  UI shell: dock, pages, shared helpers, derived book lists
+    lv_mem_psram.c       LVGL allocator that keeps all UI objects in PSRAM
+    ui_capture.c         scripted screenshot capture (UI_CAPTURE builds only)
+    widgets/
+      carousel.c/.h      reusable virtual cover carousel (3 card objects, any number of books)
+      switcher.c/.h      bottom "< Name >" pill shared by Home and Library
+      ui_status.c        status row: battery, Wi-Fi, Bluetooth
+    pages/
+      ui_home.c          Home shelves
+      ui_library.c       Library covers / books / authors + A-Z ring
+      ui_player.c        Now Playing
+      ui_settings.c      Settings view and library picker
+      ui_setup.c         setup screen (QR code to join the setup network)
+      ui_sheet.c         book details sheet (play / download / remove)
+      ui_episodes.c      podcast episode list
 ```
 
 ## Building and flashing
@@ -238,7 +248,7 @@ The screenshots and GIFs above come from the device itself. Build with `UI_CAPTU
 target_compile_definitions(${COMPONENT_LIB} PRIVATE UI_CAPTURE PLAYER_NO_SYNC)
 ```
 
-After the library loads, `main/ui_capture.c` runs a scripted tour of the UI and streams each frame
+After the library loads, `main/ui/ui_capture.c` runs a scripted tour of the UI and streams each frame
 over the console as base64 RGB565. LVGL's clock is replaced by a virtual one that only advances when
 the script says so, so animation frames land at exact moments even though each frame takes a
 second or two to send. Record the console to a file, then convert it:
