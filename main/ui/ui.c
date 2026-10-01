@@ -14,6 +14,7 @@
 #include "download.h"
 #include "player.h"
 #include "ui_priv.h"
+#include "text.h"
 
 #define RECENT_MAX 30
 #define STALE_MS   (5 * 60 * 1000)  // reload the library when Home is opened after this long
@@ -150,14 +151,14 @@ lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index)
 
     lv_obj_t *t = lv_label_create(btn);
     lv_label_set_text(t, b->title);
-    ui_one_line(t, &lv_font_montserrat_16);
+    ui_one_line(t, &ui_font_16);
     lv_obj_set_style_text_color(t, COLOR_TEXT, 0);
 
     char sub[160];
     ui_book_subtitle(b, sub, sizeof(sub));
     lv_obj_t *a = lv_label_create(btn);
     lv_label_set_text(a, sub);
-    ui_one_line(a, &lv_font_montserrat_14);
+    ui_one_line(a, &ui_font_14);
     lv_obj_set_style_text_color(a, ui_book_in_progress(b) ? COLOR_ACCENT : COLOR_MUTED, 0);
 
     // Short tap plays; long-press opens the details sheet (short-click isn't sent after a long press).
@@ -331,6 +332,7 @@ static void refresh_timer(lv_timer_t *t)
 void ui_init(void)
 {
     s_scr = lv_screen_active();
+    lv_obj_set_style_text_font(s_scr, &ui_font_16, 0);  // the default for labels that don't pick one
     lv_obj_set_style_bg_color(s_scr, COLOR_BG, 0);
     lv_obj_remove_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -343,7 +345,7 @@ void ui_init(void)
     // Dock last, so it is above the pages.
     static const char *icons[PAGE_COUNT] = {LV_SYMBOL_HOME, LV_SYMBOL_LIST, LV_SYMBOL_AUDIO};
     for (int i = 0; i < PAGE_COUNT; i++) {
-        s_dock[i] = ui_round_button(s_scr, 38, icons[i], &lv_font_montserrat_16, on_dock, (void *)(intptr_t)i);
+        s_dock[i] = ui_round_button(s_scr, 38, icons[i], &ui_font_16, on_dock, (void *)(intptr_t)i);
         lv_obj_align(s_dock[i], LV_ALIGN_TOP_MID, (i - 1) * 46, DOCK_Y);
         lv_obj_set_style_border_color(s_dock[i], COLOR_ACCENT, 0);
     }
@@ -354,7 +356,7 @@ void ui_init(void)
     setup_build(s_scr);
     status_build(s_scr);  // last, so it stays above the pages and overlays
 
-    s_msg = ui_label(s_scr, &lv_font_montserrat_16, COLOR_MUTED, 240);
+    s_msg = ui_label(s_scr, &ui_font_16, COLOR_MUTED, 240);
     lv_label_set_long_mode(s_msg, LV_LABEL_LONG_WRAP);
     lv_obj_center(s_msg);
 
@@ -444,8 +446,8 @@ static int cmp_added(const void *a, const void *b)
 static int cmp_author(const void *a, const void *b)
 {
     const author_t *x = a, *y = b;
-    int r = strcasecmp(x->sort_key, y->sort_key);
-    return r ? r : strcasecmp(x->name, y->name);
+    int r = text_cmp(x->sort_key, y->sort_key);
+    return r ? r : text_cmp(x->name, y->name);
 }
 
 static void *ps_alloc(size_t n)

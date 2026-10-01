@@ -298,7 +298,8 @@ The ABSpresso artwork lives in [`docs/brand/`](docs/brand):
 
 ## Known limitations
 
-- Fonts cover basic Latin only, so accented characters in titles don't render.
+- Fonts cover Latin (with accents), Cyrillic and Vietnamese, plus typographic quotes and dashes
+  (`tools/gen_fonts.sh`); Greek, CJK and emoji don't render.
 - One cover format (JPEG with unusual 1×2 chroma subsampling) isn't supported by the ROM decoder
   and falls back to a title card.
 - The first library load and first cover take a few seconds (TLS handshakes) when nothing is

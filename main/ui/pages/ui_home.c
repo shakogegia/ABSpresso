@@ -98,7 +98,7 @@ void home_build(lv_obj_t *page)
     s_carousel = carousel_create(s_group, &cfg);
     s_switcher = switcher_create(s_group, PAGE_SWITCHER_Y, s_names, ROW_COUNT, on_switch);
 
-    s_empty = ui_label(page, &lv_font_montserrat_16, COLOR_MUTED, 240);
+    s_empty = ui_label(page, &ui_font_16, COLOR_MUTED, 240);
     lv_label_set_long_mode(s_empty, LV_LABEL_LONG_WRAP);
     lv_label_set_text(s_empty, "Nothing here yet.\nBrowse the " LV_SYMBOL_LIST " library to start a book.");
     lv_obj_center(s_empty);

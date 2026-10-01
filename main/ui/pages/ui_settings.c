@@ -114,11 +114,11 @@ static void on_library_row(lv_event_t *e)
         lv_obj_set_style_pad_row(btn, 2, 0);
         lv_obj_t *t = lv_label_create(btn);
         lv_label_set_text(t, libs[i].name);
-        ui_one_line(t, &lv_font_montserrat_16);
+        ui_one_line(t, &ui_font_16);
         lv_obj_set_style_text_color(t, current ? lv_color_black() : COLOR_TEXT, 0);
         lv_obj_t *k = lv_label_create(btn);
         lv_label_set_text(k, libs[i].podcast ? "Podcast library" : "Audiobook library");
-        ui_one_line(k, &lv_font_montserrat_14);
+        ui_one_line(k, &ui_font_14);
         lv_obj_set_style_text_color(k, current ? lv_color_black() : COLOR_MUTED, 0);
         lv_obj_add_event_cb(btn, on_pick, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     }
@@ -138,9 +138,9 @@ void libpicker_build(lv_obj_t *scr)
     lv_obj_set_style_bg_opa(s_picker, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_picker, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_t *close = ui_round_button(s_picker, 36, LV_SYMBOL_CLOSE, &lv_font_montserrat_16, on_picker_close, NULL);
+    lv_obj_t *close = ui_round_button(s_picker, 36, LV_SYMBOL_CLOSE, &ui_font_16, on_picker_close, NULL);
     lv_obj_align(close, LV_ALIGN_CENTER, 0, -128);
-    lv_obj_t *title = ui_label(s_picker, &lv_font_montserrat_16, COLOR_ACCENT, 200);
+    lv_obj_t *title = ui_label(s_picker, &ui_font_16, COLOR_ACCENT, 200);
     lv_label_set_text(title, "Choose library");
     lv_obj_align(title, LV_ALIGN_CENTER, 0, -90);
 
@@ -251,12 +251,12 @@ void settings_build(lv_obj_t *parent)
             lv_obj_set_ext_click_area(row, 6);
             lv_obj_add_event_cb(row, on_library_row, LV_EVENT_CLICKED, NULL);
         }
-        lv_obj_t *k = ui_label(row, &lv_font_montserrat_14, COLOR_MUTED, 84);
+        lv_obj_t *k = ui_label(row, &ui_font_14, COLOR_MUTED, 84);
         lv_obj_set_style_text_align(k, LV_TEXT_ALIGN_LEFT, 0);
         lv_label_set_long_mode(k, LV_LABEL_LONG_CLIP);  // one line
         lv_label_set_text(k, s_keys[i]);
         lv_obj_align(k, LV_ALIGN_LEFT_MID, 0, 0);
-        s_values[i] = ui_label(row, &lv_font_montserrat_14, COLOR_TEXT, 164);
+        s_values[i] = ui_label(row, &ui_font_14, COLOR_TEXT, 164);
         lv_obj_set_style_text_align(s_values[i], LV_TEXT_ALIGN_RIGHT, 0);
         lv_label_set_long_mode(s_values[i], LV_LABEL_LONG_SCROLL_CIRCULAR);
         lv_obj_align(s_values[i], LV_ALIGN_RIGHT_MID, 0, 0);
@@ -268,7 +268,7 @@ void settings_build(lv_obj_t *parent)
     lv_obj_set_style_radius(btn, 19, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
     lv_obj_set_style_bg_color(btn, COLOR_ACCENT, 0);
-    lv_obj_t *l = ui_label(btn, &lv_font_montserrat_14, lv_color_black(), 0);
+    lv_obj_t *l = ui_label(btn, &ui_font_14, lv_color_black(), 0);
     lv_label_set_text(l, LV_SYMBOL_REFRESH "  Refresh library");
     lv_obj_center(l);
     lv_obj_add_event_cb(btn, on_refresh, LV_EVENT_CLICKED, NULL);

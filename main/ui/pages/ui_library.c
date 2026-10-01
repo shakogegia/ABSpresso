@@ -8,6 +8,7 @@
 #include "switcher.h"
 #include "ui.h"
 #include "ui_priv.h"
+#include "text.h"
 
 typedef enum {
     VIEW_COVERS,
@@ -54,12 +55,10 @@ static lv_obj_t *make_list(lv_obj_t *page)
     return l;
 }
 
-// Big letter for the scrub bubble: the first character, upper-cased, or '#' for non-letters.
+// Big letter for the scrub bubble: the first letter, upper-cased without accents, or '#'.
 static void set_bubble_letter(const char *s)
 {
-    char c = s ? s[0] : 0;
-    if (c >= 'a' && c <= 'z') c -= 32;
-    char txt[2] = {(c >= 'A' && c <= 'Z') ? c : '#', 0};
+    char txt[2] = {text_initial(s), 0};
     lv_label_set_text(s_bubble_label, txt);
 }
 
@@ -148,7 +147,7 @@ static void show_author(int a)
     lv_obj_t *head = lv_list_add_text(s_author_books, g_authors[a].name);
     lv_obj_set_style_bg_opa(head, LV_OPA_TRANSP, 0);
     lv_obj_set_style_text_color(head, COLOR_TEXT, 0);
-    lv_obj_set_style_text_font(head, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(head, &ui_font_20, 0);
 
     for (int i = 0; i < g_authors[a].books.count; i++) {
         ui_add_book_row(s_author_books, g_authors[a].books.idx[i]);
@@ -330,11 +329,11 @@ void library_set_books(void)
         lv_obj_set_style_pad_row(btn, 2, 0);
         lv_obj_t *n = lv_label_create(btn);
         lv_label_set_text(n, g_authors[a].name);
-        ui_one_line(n, &lv_font_montserrat_16);
+        ui_one_line(n, &ui_font_16);
         lv_obj_set_style_text_color(n, COLOR_TEXT, 0);
         lv_obj_t *c = lv_label_create(btn);
         lv_label_set_text(c, count);
-        lv_obj_set_style_text_font(c, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(c, &ui_font_14, 0);
         lv_obj_set_style_text_color(c, COLOR_MUTED, 0);
         lv_obj_add_event_cb(btn, on_author_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)a);
     }

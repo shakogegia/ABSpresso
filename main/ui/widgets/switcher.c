@@ -81,7 +81,7 @@ static lv_obj_t *arrow(lv_obj_t *parent, const char *sym, lv_event_cb_t cb, lv_a
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_PRESSED);
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_align(b, align, 0, 0);
-    lv_obj_t *l = ui_label(b, &lv_font_montserrat_16, COLOR_TEXT, 0);
+    lv_obj_t *l = ui_label(b, &ui_font_16, COLOR_TEXT, 0);
     lv_label_set_text(l, sym);
     lv_obj_center(l);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, sw);
@@ -110,7 +110,7 @@ switcher_t *switcher_create(lv_obj_t *parent, int y, const char *const *names, i
 
     sw->prev = arrow(sw->pill, LV_SYMBOL_LEFT, on_prev, LV_ALIGN_LEFT_MID, sw);
     sw->next = arrow(sw->pill, LV_SYMBOL_RIGHT, on_next, LV_ALIGN_RIGHT_MID, sw);
-    sw->name = ui_label(sw->pill, &lv_font_montserrat_14, COLOR_ACCENT, W - 2 * H - 8);
+    sw->name = ui_label(sw->pill, &ui_font_14, COLOR_ACCENT, W - 2 * H - 8);
     lv_label_set_long_mode(sw->name, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_center(sw->name);
 

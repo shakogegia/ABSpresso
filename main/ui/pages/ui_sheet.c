@@ -170,7 +170,7 @@ static lv_obj_t *pill(lv_obj_t *parent, int w, const char *text, lv_event_cb_t c
     lv_obj_set_style_radius(b, 20, 0);
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_set_style_bg_color(b, accent ? COLOR_ACCENT : COLOR_CARD, 0);
-    lv_obj_t *l = ui_label(b, &lv_font_montserrat_14, accent ? lv_color_black() : COLOR_TEXT, 0);
+    lv_obj_t *l = ui_label(b, &ui_font_14, accent ? lv_color_black() : COLOR_TEXT, 0);
     lv_label_set_text(l, text);
     lv_obj_center(l);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
@@ -185,7 +185,7 @@ void sheet_build(lv_obj_t *scr)
     lv_obj_set_style_bg_opa(s_sheet, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_sheet, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_t *close = ui_round_button(s_sheet, 36, LV_SYMBOL_CLOSE, &lv_font_montserrat_16, on_close, NULL);
+    lv_obj_t *close = ui_round_button(s_sheet, 36, LV_SYMBOL_CLOSE, &ui_font_16, on_close, NULL);
     lv_obj_align(close, LV_ALIGN_CENTER, 0, -128);
 
     s_cover_box = lv_obj_create(s_sheet);
@@ -197,7 +197,7 @@ void sheet_build(lv_obj_t *scr)
     lv_obj_set_style_radius(s_cover_box, 8, 0);
     lv_obj_set_style_clip_corner(s_cover_box, true, 0);
     lv_obj_remove_flag(s_cover_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    s_placeholder = ui_label(s_cover_box, &lv_font_montserrat_14, COLOR_MUTED, COVER_BOX - 12);
+    s_placeholder = ui_label(s_cover_box, &ui_font_14, COLOR_MUTED, COVER_BOX - 12);
     lv_label_set_long_mode(s_placeholder, LV_LABEL_LONG_WRAP);
     lv_obj_center(s_placeholder);
     // The cached thumbnail is COVER_THUMB_SIZE; scale it down to fit the box.
@@ -205,13 +205,13 @@ void sheet_build(lv_obj_t *scr)
     lv_image_set_scale(s_cover, 256 * COVER_BOX / COVER_THUMB_SIZE);
     lv_obj_center(s_cover);
 
-    s_title = ui_label(s_sheet, &lv_font_montserrat_16, COLOR_TEXT, 250);
+    s_title = ui_label(s_sheet, &ui_font_16, COLOR_TEXT, 250);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_title, LV_ALIGN_CENTER, 0, 14);
-    s_author = ui_label(s_sheet, &lv_font_montserrat_14, COLOR_MUTED, 240);
+    s_author = ui_label(s_sheet, &ui_font_14, COLOR_MUTED, 240);
     lv_label_set_long_mode(s_author, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_author, LV_ALIGN_CENTER, 0, 36);
-    s_info = ui_label(s_sheet, &lv_font_montserrat_14, COLOR_ACCENT, 240);
+    s_info = ui_label(s_sheet, &ui_font_14, COLOR_ACCENT, 240);
     lv_obj_align(s_info, LV_ALIGN_CENTER, 0, 56);
 
     lv_obj_t *play = pill(s_sheet, 104, LV_SYMBOL_PLAY " Play", on_play, true);
@@ -220,7 +220,7 @@ void sheet_build(lv_obj_t *scr)
     lv_obj_align(s_dl_btn, LV_ALIGN_CENTER, 62, 94);
     s_dl_label = lv_obj_get_child(s_dl_btn, 0);
 
-    s_status = ui_label(s_sheet, &lv_font_montserrat_14, COLOR_MUTED, 210);
+    s_status = ui_label(s_sheet, &ui_font_14, COLOR_MUTED, 210);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_DOT);
     lv_obj_align(s_status, LV_ALIGN_CENTER, 0, 130);
 

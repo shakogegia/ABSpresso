@@ -181,7 +181,7 @@ carousel_t *carousel_create(lv_obj_t *parent, const carousel_cfg_t *cfg)
         lv_obj_add_event_cb(card->root, on_card_clicked, LV_EVENT_SHORT_CLICKED, c);
         lv_obj_add_event_cb(card->root, on_card_long, LV_EVENT_LONG_PRESSED, c);
 
-        card->placeholder = ui_label(card->root, &lv_font_montserrat_16, COLOR_MUTED, CARD_SIZE - 20);
+        card->placeholder = ui_label(card->root, &ui_font_16, COLOR_MUTED, CARD_SIZE - 20);
         lv_label_set_long_mode(card->placeholder, LV_LABEL_LONG_WRAP);
         lv_obj_center(card->placeholder);
 
@@ -198,10 +198,10 @@ carousel_t *carousel_create(lv_obj_t *parent, const carousel_cfg_t *cfg)
     }
 
     // Fixed widths so long text can't spill toward the screen edge; it scrolls instead.
-    c->title = ui_label(parent, &lv_font_montserrat_16, COLOR_TEXT, cfg->title_w);
+    c->title = ui_label(parent, &ui_font_16, COLOR_TEXT, cfg->title_w);
     lv_label_set_long_mode(c->title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(c->title, LV_ALIGN_TOP_MID, cfg->x, cfg->y + CARD_SIZE + 8);
-    c->sub = ui_label(parent, &lv_font_montserrat_14, COLOR_MUTED, cfg->sub_w);
+    c->sub = ui_label(parent, &ui_font_14, COLOR_MUTED, cfg->sub_w);
     lv_label_set_long_mode(c->sub, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(c->sub, LV_ALIGN_TOP_MID, cfg->x, cfg->y + CARD_SIZE + 30);
 

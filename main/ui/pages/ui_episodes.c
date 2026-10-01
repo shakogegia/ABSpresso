@@ -149,14 +149,14 @@ static void build_rows(void)
 
         lv_obj_t *t = lv_label_create(btn);
         lv_label_set_text(t, ep->title);
-        ui_one_line(t, &lv_font_montserrat_16);
+        ui_one_line(t, &ui_font_16);
         lv_obj_set_style_text_color(t, COLOR_TEXT, 0);
 
         char sub[80];
         fmt_sub(ep, sub, sizeof(sub));
         lv_obj_t *s = lv_label_create(btn);
         lv_label_set_text(s, sub);
-        ui_one_line(s, &lv_font_montserrat_14);
+        ui_one_line(s, &ui_font_14);
         const bool active = ep->current_time > 0 && !ep->finished;
         lv_obj_set_style_text_color(s, active ? COLOR_ACCENT : COLOR_MUTED, 0);
 
@@ -227,13 +227,13 @@ void episodes_build(lv_obj_t *scr)
     lv_obj_set_style_bg_opa(s_overlay, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_t *close = ui_round_button(s_overlay, 36, LV_SYMBOL_CLOSE, &lv_font_montserrat_16, on_close, NULL);
+    lv_obj_t *close = ui_round_button(s_overlay, 36, LV_SYMBOL_CLOSE, &ui_font_16, on_close, NULL);
     lv_obj_align(close, LV_ALIGN_CENTER, 0, -128);
 
-    s_title = ui_label(s_overlay, &lv_font_montserrat_16, COLOR_TEXT, 230);
+    s_title = ui_label(s_overlay, &ui_font_16, COLOR_TEXT, 230);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -92);
-    s_status = ui_label(s_overlay, &lv_font_montserrat_14, COLOR_MUTED, 220);
+    s_status = ui_label(s_overlay, &ui_font_14, COLOR_MUTED, 220);
     lv_obj_align(s_status, LV_ALIGN_CENTER, 0, -72);
 
     s_list = lv_list_create(s_overlay);

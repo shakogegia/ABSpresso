@@ -81,9 +81,9 @@ void status_build(lv_obj_t *scr)
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row, 8, 0);
 
-    s_bt = ui_label(row, &lv_font_montserrat_14, COLOR_OFF, 0);
+    s_bt = ui_label(row, &ui_font_14, COLOR_OFF, 0);
     lv_label_set_text(s_bt, LV_SYMBOL_BLUETOOTH);
-    s_wifi = ui_label(row, &lv_font_montserrat_14, COLOR_OFF, 0);
+    s_wifi = ui_label(row, &ui_font_14, COLOR_OFF, 0);
     lv_label_set_text(s_wifi, LV_SYMBOL_WIFI);
 
     // Battery: an outline with a fill bar, a bolt drawn inside it while charging, and a terminal nub.
@@ -118,7 +118,7 @@ void status_build(lv_obj_t *scr)
 
     // Fixed width (fits "100%"), left-aligned, so switching between "72%", "Chrg" and "Full"
     // never shifts the row.
-    s_pct = ui_label(row, &lv_font_montserrat_14, COLOR_TEXT, PCT_W);
+    s_pct = ui_label(row, &ui_font_14, COLOR_TEXT, PCT_W);
     lv_obj_set_style_text_align(s_pct, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(s_pct, LV_LABEL_LONG_CLIP);
     lv_label_set_text(s_pct, "");

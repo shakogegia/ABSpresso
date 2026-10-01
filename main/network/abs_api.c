@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "config.h"
+#include "text.h"
 
 static const char *TAG = "abs";
 
@@ -226,7 +227,7 @@ static double json_num(const cJSON *obj, const char *key)
 static int book_cmp(const void *pa, const void *pb)
 {
     const abs_book_t *a = pa, *b = pb;
-    return strcasecmp(a->sort_title, b->sort_title);
+    return text_cmp(a->sort_title, b->sort_title);
 }
 
 esp_err_t abs_parse_books(const char *items_json, const char *me_json, abs_book_t **out_books, int *out_count)

@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include "lvgl.h"
 #include "abs_api.h"
+#include "ui_fonts.h"
 
 #define COLOR_BG     lv_color_hex(0x101418)
 #define COLOR_CARD   lv_color_hex(0x1E252C)

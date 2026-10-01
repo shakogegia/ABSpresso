@@ -271,22 +271,22 @@ void playing_build(lv_obj_t *page)
     // drag to scrub the chapter) and volume on the left (fills from the bottom).
     s_arc = side_arc(page, 305, 55, 1000, on_arc_event);
     s_vol_arc = side_arc(page, 125, 235, 100, on_volume_arc);
-    lv_obj_t *vol_icon = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 0);
+    lv_obj_t *vol_icon = ui_label(page, &ui_font_14, COLOR_MUTED, 0);
     lv_label_set_text(vol_icon, LV_SYMBOL_VOLUME_MAX);
     lv_obj_align(vol_icon, LV_ALIGN_CENTER, -146, 0);
 
     // Everything tappable stays inside radius ~150 so it never sits under the ring (ui_priv.h).
-    s_title = ui_label(page, &lv_font_montserrat_20, COLOR_TEXT, 200);
+    s_title = ui_label(page, &ui_font_20, COLOR_TEXT, 200);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -90);
     lv_obj_add_flag(s_title, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_title, on_title, LV_EVENT_CLICKED, NULL);
 
-    s_chapter = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 230);
+    s_chapter = ui_label(page, &ui_font_14, COLOR_MUTED, 230);
     lv_label_set_long_mode(s_chapter, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_chapter, LV_ALIGN_CENTER, 0, -67);
 
-    s_state = ui_label(page, &lv_font_montserrat_14, COLOR_ACCENT, 240);
+    s_state = ui_label(page, &ui_font_14, COLOR_ACCENT, 240);
     lv_label_set_long_mode(s_state, LV_LABEL_LONG_DOT);
     lv_obj_align(s_state, LV_ALIGN_CENTER, 0, -48);
 
@@ -300,19 +300,19 @@ void playing_build(lv_obj_t *page)
     char lbl[8];
     const int back = config_get()->skip_back_s, fwd = config_get()->skip_fwd_s;
     snprintf(lbl, sizeof(lbl), "-%d", back);
-    lv_obj_t *b30 = ui_round_button(page, 60, lbl, &lv_font_montserrat_20, on_skip, (void *)(intptr_t)-back);
+    lv_obj_t *b30 = ui_round_button(page, 60, lbl, &ui_font_20, on_skip, (void *)(intptr_t)-back);
     lv_obj_align(b30, LV_ALIGN_CENTER, -94, 4);
     snprintf(lbl, sizeof(lbl), "+%d", fwd);
-    lv_obj_t *f30 = ui_round_button(page, 60, lbl, &lv_font_montserrat_20, on_skip, (void *)(intptr_t)fwd);
+    lv_obj_t *f30 = ui_round_button(page, 60, lbl, &ui_font_20, on_skip, (void *)(intptr_t)fwd);
     lv_obj_align(f30, LV_ALIGN_CENTER, 94, 4);
 
-    s_time = ui_label(page, &lv_font_montserrat_16, COLOR_TEXT, 200);
+    s_time = ui_label(page, &ui_font_16, COLOR_TEXT, 200);
     lv_obj_align(s_time, LV_ALIGN_CENTER, 0, 58);
-    s_remaining = ui_label(page, &lv_font_montserrat_14, COLOR_MUTED, 220);
+    s_remaining = ui_label(page, &ui_font_14, COLOR_MUTED, 220);
     lv_obj_align(s_remaining, LV_ALIGN_CENTER, 0, 79);
 
-    lv_obj_t *prev = ui_round_button(page, 38, LV_SYMBOL_PREV, &lv_font_montserrat_16, on_prev_ch, NULL);
+    lv_obj_t *prev = ui_round_button(page, 38, LV_SYMBOL_PREV, &ui_font_16, on_prev_ch, NULL);
     lv_obj_align(prev, LV_ALIGN_CENTER, -30, 114);
-    lv_obj_t *next = ui_round_button(page, 38, LV_SYMBOL_NEXT, &lv_font_montserrat_16, on_next_ch, NULL);
+    lv_obj_t *next = ui_round_button(page, 38, LV_SYMBOL_NEXT, &ui_font_16, on_next_ch, NULL);
     lv_obj_align(next, LV_ALIGN_CENTER, 30, 114);
 }

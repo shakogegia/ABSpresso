@@ -57,10 +57,10 @@ void setup_build(lv_obj_t *scr)
     lv_obj_set_style_bg_opa(s_overlay, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_CLICKABLE);
 
-    s_close = ui_round_button(s_overlay, 36, LV_SYMBOL_CLOSE, &lv_font_montserrat_16, on_close, NULL);
+    s_close = ui_round_button(s_overlay, 36, LV_SYMBOL_CLOSE, &ui_font_16, on_close, NULL);
     lv_obj_align(s_close, LV_ALIGN_CENTER, 0, -128);
 
-    lv_obj_t *title = ui_label(s_overlay, &lv_font_montserrat_16, COLOR_ACCENT, 220);
+    lv_obj_t *title = ui_label(s_overlay, &ui_font_16, COLOR_ACCENT, 220);
     lv_label_set_text(title, "Scan to set up");
     lv_obj_align(title, LV_ALIGN_CENTER, 0, -96);
 
@@ -73,12 +73,12 @@ void setup_build(lv_obj_t *scr)
     lv_obj_set_style_border_width(s_qr, 6, 0);
     lv_obj_align(s_qr, LV_ALIGN_CENTER, 0, -18);
 
-    s_net = ui_label(s_overlay, &lv_font_montserrat_14, COLOR_TEXT, 240);
+    s_net = ui_label(s_overlay, &ui_font_14, COLOR_TEXT, 240);
     lv_obj_align(s_net, LV_ALIGN_CENTER, 0, 70);
-    lv_obj_t *hint = ui_label(s_overlay, &lv_font_montserrat_14, COLOR_MUTED, 220);
+    lv_obj_t *hint = ui_label(s_overlay, &ui_font_14, COLOR_MUTED, 220);
     lv_label_set_text(hint, "then open 192.168.4.1");
     lv_obj_align(hint, LV_ALIGN_CENTER, 0, 100);
-    s_status = ui_label(s_overlay, &lv_font_montserrat_14, COLOR_ACCENT, 200);
+    s_status = ui_label(s_overlay, &ui_font_14, COLOR_ACCENT, 200);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_WRAP);
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 300);
 
