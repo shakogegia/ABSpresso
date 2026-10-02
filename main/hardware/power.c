@@ -16,6 +16,7 @@
 #include "config.h"
 #include "portal.h"
 #include "player.h"
+#include "ui.h"
 
 static const char *TAG = "power";
 
@@ -23,6 +24,7 @@ static const char *TAG = "power";
 #define PIN_BOOT      GPIO_NUM_0  // BOOT button, low when pressed
 #define POLL_MS       100
 #define DIM_PERCENT   25          // of the configured brightness
+#define LONG_PRESS_MS 2000        // BOOT held this long: sleep
 
 typedef enum { SCREEN_ON, SCREEN_DIM, SCREEN_OFF } screen_t;
 
@@ -162,6 +164,50 @@ static void deep_sleep(void)
     esp_deep_sleep_start();
 }
 
+/* ---------- BOOT button ---------- */
+
+// The only free physical button (RST is a hardware reset). Polled with everything else:
+// a short press plays/pauses (waking the screen), holding it for 2 s puts the device to sleep.
+static void boot_button(int64_t now)
+{
+    static bool armed;          // false until BOOT is seen released: the press that woke us doesn't count
+    static int64_t down_since;  // 0 while released
+    static bool long_press;
+    const bool down = !gpio_get_level(PIN_BOOT);
+    if (!armed) {
+        armed = !down;
+        return;
+    }
+    if (down) {
+        if (!down_since) {
+            down_since = now;
+        } else if (!long_press && now - down_since >= LONG_PRESS_MS * 1000LL) {
+            long_press = true;
+            s_last_touch_us = now;
+            if (s_screen != SCREEN_ON) screen_on();
+            ESP_LOGI(TAG, "BOOT held: sleeping on release");
+            ui_show_notice(LV_SYMBOL_POWER, "Release to sleep");
+        }
+        return;
+    }
+    if (!down_since) return;
+    const bool was_long = long_press;
+    down_since = 0;
+    long_press = false;
+    if (was_long) {
+        // Asked for, so no "busy" check: playback stops and we sleep even on USB power.
+        deep_sleep();
+        ui_show_notice(NULL, NULL);  // still here: the screen was being touched
+        return;
+    }
+    ESP_LOGI(TAG, "BOOT pressed: play/pause");
+    s_last_touch_us = now;
+    if (s_screen != SCREEN_ON) screen_on();
+    lvgl_port_lock(0);
+    ui_toggle_play();
+    lvgl_port_unlock();
+}
+
 /* ---------- task ---------- */
 
 static void power_task(void *arg)
@@ -171,6 +217,7 @@ static void power_task(void *arg)
         const int64_t now = esp_timer_get_time();
         // Setup shows its progress on screen while you're busy on the phone: stay awake.
         if (portal_active() || s_keep_awake) s_last_touch_us = now;
+        boot_button(now);
         const int64_t idle_s = (now - s_last_touch_us) / 1000000;
 
         if (s_screen == SCREEN_OFF) {

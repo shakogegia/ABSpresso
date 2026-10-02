@@ -49,15 +49,23 @@ static bool player_loaded(const player_status_t *st)
 
 /* ---------- events ---------- */
 
-static void on_toggle(lv_event_t *e)
+// Play/pause; with nothing loaded, resumes the most recent book. (Also the BOOT button.)
+void ui_toggle_play(void)
 {
     player_status_t st;
     player_get_status(&st);
     if (!player_loaded(&st)) {
-        if (s_resume >= 0) ui_play_book(s_resume);
+        // The page sets s_resume when it's shown; from the BOOT button it may not have been yet.
+        const int i = s_resume >= 0 ? s_resume : (g_continue.count ? g_continue.idx[0] : -1);
+        if (i >= 0) ui_play_book(i);
         return;
     }
     player_toggle();
+}
+
+static void on_toggle(lv_event_t *e)
+{
+    ui_toggle_play();
 }
 
 // Tapping the title opens the details sheet (download controls) for the book shown.

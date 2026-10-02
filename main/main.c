@@ -31,6 +31,7 @@ static void show_message(const char *msg)
 
 #define RETRY_US (30 * 1000000LL)
 
+
 void app_main(void)
 {
     esp_err_t err = nvs_flash_init();

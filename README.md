@@ -266,6 +266,17 @@ python3 tools/capture_to_media.py serial.log docs/media   # needs ffmpeg
 Frames named `<name>_NNN` become `<name>.gif` (using each frame's hold time); the rest become PNGs
 masked to the round panel. Note that the capture shows your own library's titles and covers.
 
+## Buttons
+
+The board's two buttons, beside the touchscreen:
+
+| Button | Action |
+| --- | --- |
+| **BOOT**, short press | play / pause (with nothing loaded, resumes your latest book); wakes the screen |
+| **BOOT**, hold 2 s | "Release to sleep": stops playback and goes into deep sleep (BOOT or a touch wakes it) |
+| **RST** | restart (a hardware reset; firmware can't change it) |
+| Hold **BOOT**, press **RST** | download mode for flashing by hand (`idf.py flash` normally does this itself) |
+
 ## Setup portal
 
 With no saved configuration, or from **Settings → Wi-Fi & login**, the device starts its own

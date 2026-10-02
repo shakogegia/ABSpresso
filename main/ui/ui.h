@@ -8,6 +8,8 @@
 // All ui_* calls must hold the LVGL port lock (they are LVGL calls).
 void ui_init(void);
 void ui_show_message(const char *msg);
+// Play/pause from outside the UI (the BOOT button). Call with the LVGL lock held.
+void ui_toggle_play(void);
 // The UI keeps using `books` until the next ui_set_books(); the caller frees the old array after.
 void ui_set_books(const abs_book_t *books, int count);
 
@@ -18,6 +20,9 @@ void ui_get_source(uint32_t *loaded_tick, bool *from_cache);
 
 // Like ui_show_message(), but takes the LVGL lock itself (for other tasks).
 void ui_show_message_locked(const char *msg);
+// A large notice over a dimmed screen (e.g. "Release to sleep"); NULL text hides it. Takes the
+// LVGL lock itself.
+void ui_show_notice(const char *icon, const char *text);
 
 // The server's libraries and which one is selected (for Settings). The UI keeps its own copy.
 void ui_set_libraries(const abs_library_t *libs, int count, const char *selected_id);

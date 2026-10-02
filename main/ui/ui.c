@@ -30,7 +30,7 @@ static volatile bool s_refresh_requested;
 static bool s_from_cache;
 static uint32_t s_books_loaded_at;
 
-static lv_obj_t *s_scr, *s_msg;
+static lv_obj_t *s_scr, *s_msg, *s_notice, *s_notice_icon, *s_notice_text;
 static lv_obj_t *s_pages[PAGE_COUNT];
 static lv_obj_t *s_dock[PAGE_COUNT];
 static ui_page_t s_page;
@@ -407,8 +407,40 @@ void ui_init(void)
     lv_label_set_long_mode(s_msg, LV_LABEL_LONG_WRAP);
     lv_obj_center(s_msg);
 
+    // Notice: the screen dimmed behind a card with a big icon and text.
+    s_notice = ui_page_container(s_scr);
+    lv_obj_set_style_bg_color(s_notice, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_notice, LV_OPA_70, 0);
+    lv_obj_t *card = lv_obj_create(s_notice);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_size(card, 230, 150);
+    lv_obj_center(card);
+    lv_obj_set_style_radius(card, 24, 0);
+    lv_obj_set_style_bg_color(card, COLOR_CARD, 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(card, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    s_notice_icon = ui_label(card, &lv_font_montserrat_40, COLOR_ACCENT, 0);
+    lv_obj_align(s_notice_icon, LV_ALIGN_TOP_MID, 0, 24);
+    s_notice_text = ui_label(card, &ui_font_20, COLOR_TEXT, 210);
+    lv_obj_align(s_notice_text, LV_ALIGN_BOTTOM_MID, 0, -26);
+    lv_obj_add_flag(s_notice, LV_OBJ_FLAG_HIDDEN);
+
     ui_show_page(PAGE_HOME);
     lv_timer_create(refresh_timer, 250, NULL);
+}
+
+void ui_show_notice(const char *icon, const char *text)
+{
+    lvgl_port_lock(0);
+    if (text) {
+        lv_label_set_text(s_notice_icon, icon ? icon : "");
+        lv_label_set_text(s_notice_text, text);
+        lv_obj_remove_flag(s_notice, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(s_notice);
+    } else {
+        lv_obj_add_flag(s_notice, LV_OBJ_FLAG_HIDDEN);
+    }
+    lvgl_port_unlock();
 }
 
 void ui_show_message_locked(const char *msg)
