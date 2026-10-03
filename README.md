@@ -274,7 +274,7 @@ tools/
   gen_fonts.sh           regenerates the UI fonts (Montserrat + extended character ranges)
 docs/
   media/                 screenshots
-  brand/                 logo, icon, banners and the GitHub social preview image
+  brand/                 logo, icon and banners
 ```
 
 ### Notes from bring-up
@@ -324,11 +324,3 @@ python3 tools/capture_to_media.py serial.log docs/media   # needs ffmpeg
 ```
 
 The capture shows your own library's titles and covers.
-
-### Artwork
-
-<img src="docs/brand/icon.png" width="96" align="right" alt="ABSpresso icon">
-
-The ABSpresso artwork is in [`docs/brand/`](docs/brand): `icon.svg` / `icon.png` (app icon),
-`banner.png` (the banner above) and `social-preview.png` (GitHub's social preview image, set in
-the repository's Settings → General).
