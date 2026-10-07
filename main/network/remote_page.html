@@ -13,6 +13,7 @@
 :root{--bg:#101418;--card:#1e252c;--line:#2c353e;--text:#f2f2f2;--muted:#8c96a0;--accent:#f0a030;
   --top:env(safe-area-inset-top,0px);--bottom:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,system-ui,sans-serif}
 body{padding:calc(var(--top) + 8px) 16px calc(var(--bottom) + 84px)}
 main{max-width:480px;margin:0 auto}
@@ -44,6 +45,18 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:0}
 .controls .skip span{position:absolute;font-size:10px;font-weight:700;top:20px}
 .vol{display:flex;align-items:center;gap:10px;color:var(--muted)}
 .vol svg{width:20px;height:20px;fill:currentColor;flex:none}
+.pill{margin:18px auto 0;display:flex;align-items:center;gap:8px;padding:9px 16px;border:1px solid var(--line);
+  border-radius:20px;background:none;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.pill svg{width:18px;height:18px;fill:currentColor}
+.pill.on{color:var(--accent);border-color:var(--accent)}
+.sheet-bg{position:fixed;inset:0;background:#0009;display:flex;align-items:flex-end;justify-content:center;z-index:10}
+.sheet{background:var(--card);width:100%;max-width:480px;border-radius:16px 16px 0 0;
+  padding:8px 16px calc(var(--bottom) + 16px)}
+.sheet h3{font-size:15px;margin:10px 4px 8px;color:var(--muted);font-weight:600}
+.sheet button{display:block;width:100%;text-align:left;padding:14px 4px;border:0;border-bottom:1px solid var(--line);
+  background:none;color:var(--text);font-size:17px}
+.sheet button.sel{color:var(--accent)}
+.sheet button:last-child{border-bottom:0}
 .idle{color:var(--muted);padding:40px 0}
 .idle button{margin-top:14px}
 
@@ -136,6 +149,7 @@ nav button[aria-selected=true]{color:var(--accent)}
         <input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume">
         <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
       </div>
+      <button class="pill" id="b-sleep"><svg viewBox="0 0 24 24"><path d="M12.3 2a9 9 0 1 0 9.7 11.6A7.5 7.5 0 0 1 12.3 2z"/></svg><span id="sleep-text">Sleep timer</span></button>
     </div>
     <div class="np idle" id="idle" hidden>
       <div class="cover">&#9749;</div>
@@ -201,6 +215,12 @@ nav button[aria-selected=true]{color:var(--accent)}
   <button role="tab" data-v="settings"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.4-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>Settings</button>
 </nav>
 <div id="toast"></div>
+<div class="sheet-bg" id="sleep-sheet" hidden>
+  <div class="sheet" role="dialog" aria-label="Sleep timer">
+    <h3>Pause playback after</h3>
+    <div id="sleep-options"></div>
+  </div>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -305,7 +325,7 @@ function renderStatus() {
   $('np-author').textContent = st.author;
   // Chapter titles often don't match their position (an intro counts too), so show both.
   $('np-chapter').textContent = st.chapter_count > 0
-    ? `${st.chapter || 'Chapter'} · ${st.chapter_index + 1} of ${st.chapter_count}` : '';
+    ? `${st.chapter || 'Chapter'} · ${st.chapter_index + 1}\u00a0of\u00a0${st.chapter_count}` : '';
   const [a, b] = span();
   if (!dragging) {
     $('scrub').max = Math.max(1, Math.round(b - a));
@@ -322,6 +342,7 @@ function renderStatus() {
   $('s-back').textContent = st.skip_back;
   $('s-fwd').textContent = st.skip_fwd;
   if (Date.now() > volUntil) $('vol').value = st.volume;
+  renderSleep();
   const li = document.querySelectorAll('#books li');
   li.forEach(el => el.classList.toggle('now', el.dataset.id === st.id));
 }
@@ -361,6 +382,39 @@ $('vol').addEventListener('input', e => {
   clearTimeout(volTimer);
   volTimer = setTimeout(() => post('/api/volume?v=' + e.target.value), 120);
 });
+
+/* ---------- sleep timer ---------- */
+
+const SLEEP_CHOICES = [[15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'],
+                       [-1, 'End of chapter'], [0, 'Off']];
+
+function renderSleep() {
+  const on = st.sleep && st.sleep !== 'off';
+  $('b-sleep').classList.toggle('on', on);
+  $('sleep-text').textContent = st.sleep === 'timer' ? `Sleep in ${fmt(st.sleep_left)}`
+    : st.sleep === 'chapter' ? `Sleep at chapter end (${fmt(st.sleep_left)})` : 'Sleep timer';
+}
+
+$('b-sleep').onclick = () => {
+  const box = $('sleep-options');
+  box.textContent = '';
+  for (const [m, label] of SLEEP_CHOICES) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if ((m === 0 && st.sleep === 'off') || (m === -1 && st.sleep === 'chapter')) b.className = 'sel';
+    b.onclick = e => {
+      e.stopPropagation();
+      $('sleep-sheet').hidden = true;
+      post('/api/sleep?min=' + m).then(() => {
+        toast(m === 0 ? 'Sleep timer off' : m < 0 ? 'Pausing at the end of the chapter' : `Pausing in ${label}`);
+        poll();
+      });
+    };
+    box.appendChild(b);
+  }
+  $('sleep-sheet').hidden = false;
+};
+$('sleep-sheet').onclick = e => { if (e.target.id === 'sleep-sheet') $('sleep-sheet').hidden = true; };
 
 /* ---------- library ---------- */
 

@@ -4,7 +4,8 @@
 // JSON API behind it, served on port 80 and advertised as http://abspresso.local.
 //
 //   GET  /                    the control page
-//   GET  /api/status          what's playing, position, chapter, volume, the server's address
+//   GET  /api/status          what's playing, position, chapter, volume, sleep timer, the server's
+//                             address
 //   GET  /api/books           the library shown on the device (id, title, author, progress,
 //                             download state)
 //   GET  /api/cover?id=       a cached cover JPEG (SD card only; 404 otherwise). The page prefers
@@ -16,6 +17,7 @@
 //   POST /api/chapter?d=-1|1  previous / next chapter
 //   POST /api/volume?v=0-100
 //   POST /api/stop
+//   POST /api/sleep?min=      sleep timer: minutes of playback, -1 for the end of the chapter, 0 off
 //   GET  /api/settings        brightness, screen-off and sleep timers, skip lengths, rotation,
 //                             the server's libraries and the selected one
 //   POST /api/settings?brightness=&screen_off_s=&sleep_min=&skip_back_s=&skip_fwd_s=&rotate180=

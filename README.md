@@ -26,6 +26,9 @@ phone needed.
   edge to jump through the alphabet.
 - **Now Playing**: cover art backdrop, a progress arc to scrub through the chapter, a volume arc,
   skip back/forward and previous/next chapter.
+- **Sleep timer**: pause after 15, 30, 45 or 60 minutes of listening, or at the end of the chapter,
+  fading out over the last seconds. The **Zz** button on Now Playing steps through the choices and
+  then shows the minutes left; it can also be set from the remote control.
 - **Podcasts**: shows list their episodes (in progress first, then newest); episodes play and
   sync like books.
 - **Multiple libraries**: switch between the server's libraries from Settings.
@@ -145,8 +148,8 @@ the device itself:
 | :---: | :---: | :---: | :---: |
 | <img src="docs/media/remote/remote_playing.png" width="180"> | <img src="docs/media/remote/remote_library.png" width="180"> | <img src="docs/media/remote/remote_downloads.png" width="180"> | <img src="docs/media/remote/remote_settings.png" width="180"> |
 
-- **Now Playing**: play/pause, skip back/forward, previous/next chapter, a chapter scrubber and
-  volume. With nothing loaded, Play resumes your latest book.
+- **Now Playing**: play/pause, skip back/forward, previous/next chapter, a chapter scrubber,
+  volume and the sleep timer. With nothing loaded, Play resumes your latest book.
 - **Library**: search, sort by recent, A-Z or recently added, and tap a book to play it on the
   device.
 - **Downloads**: save books to the SD card for offline listening, follow their progress, cancel
@@ -179,7 +182,7 @@ your Audiobookshelf credentials).
   chip. A Bluetooth Low Energy remote (play/pause from a button or watch) is possible on this one.
 - **Better battery readings**: calibrate the voltage curve against a real discharge, and detect
   charging directly (the charger's status pin isn't connected to the ESP32 on this board).
-- **Sleep timer** and **playback speed** on Now Playing.
+- **Playback speed** on Now Playing.
 - **Chapter list**, and **series** and **collections** in the Library.
 - **Downloading podcast episodes** (books can already be downloaded).
 - **Over-the-air updates** from GitHub releases.
@@ -298,7 +301,7 @@ network can use it:
 
 | Request | Does |
 | --- | --- |
-| `GET /api/status` | What's playing: state, title, chapter, position, duration, volume |
+| `GET /api/status` | What's playing: state, title, chapter, position, duration, volume, sleep timer |
 | `GET /api/books` | The library shown on the device, with progress and download state |
 | `GET /api/cover?id=` | A cover from the SD card cache |
 | `POST /api/toggle` | Play / pause |
@@ -308,6 +311,7 @@ network can use it:
 | `POST /api/chapter?d=-1` or `1` | Previous / next chapter |
 | `POST /api/volume?v=0-100` | Set the volume |
 | `POST /api/stop` | Stop playback |
+| `POST /api/sleep?min=` | Sleep timer: minutes of playback, `-1` for the end of the chapter, `0` off |
 | `GET /api/downloads` | SD card space and downloads in progress or saved |
 | `POST /api/download?id=` (`&remove=1`) | Download a book (or cancel / delete it) |
 | `GET /api/settings`, `POST /api/settings?...` | Read or change device settings |

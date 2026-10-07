@@ -197,6 +197,8 @@ static esp_err_t on_status(httpd_req_t *req)
     buf_printf(&b, ",\"position\":%.1f,\"duration\":%.1f", st.position, st.duration);
     buf_printf(&b, ",\"chapter_start\":%.1f,\"chapter_end\":%.1f", st.chapter_start, st.chapter_end);
     buf_printf(&b, ",\"volume\":%d,\"buffer\":%d", st.volume, st.buffer_percent);
+    static const char *const SLEEP[] = {"off", "timer", "chapter"};
+    buf_printf(&b, ",\"sleep\":\"%s\",\"sleep_left\":%.0f", SLEEP[st.sleep_mode], st.sleep_left);
     buf_printf(&b, ",\"skip_back\":%d,\"skip_fwd\":%d,", cfg->skip_back_s, cfg->skip_fwd_s);
     buf_str(&b, "server", cfg->server);  // the page loads covers from it (they need no sign-in)
     buf_append(&b, "}", 1);
@@ -299,6 +301,15 @@ static esp_err_t on_volume(httpd_req_t *req)
     int v;
     if (!query_int(req, "v", &v)) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "v");
     player_set_volume(clamp(v, 0, 100));
+    return send_ok(req);
+}
+
+// ?min=15 (any 1-240), ?min=-1 for the end of the chapter, ?min=0 to turn it off.
+static esp_err_t on_sleep(httpd_req_t *req)
+{
+    int m;
+    if (!query_int(req, "min", &m) || m < -1 || m > 240) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "min");
+    player_set_sleep(m < 0 ? PLAYER_SLEEP_END_OF_CHAPTER : m);
     return send_ok(req);
 }
 
@@ -506,6 +517,7 @@ void remote_start(void)
         {.uri = "/api/chapter", .method = HTTP_POST, .handler = on_chapter},
         {.uri = "/api/volume", .method = HTTP_POST, .handler = on_volume},
         {.uri = "/api/stop", .method = HTTP_POST, .handler = on_stop},
+        {.uri = "/api/sleep", .method = HTTP_POST, .handler = on_sleep},
         {.uri = "/api/downloads", .method = HTTP_GET, .handler = on_downloads},
         {.uri = "/api/download", .method = HTTP_POST, .handler = on_download},
     };
