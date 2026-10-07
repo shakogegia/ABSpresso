@@ -46,10 +46,14 @@ static const char *TAG = "board";
 #define EXIO_TOUCH_RST IO_EXPANDER_PIN_NUM_0
 #define EXIO_LCD_RST   IO_EXPANDER_PIN_NUM_1
 
-// I2S to the PCM5101 DAC (V1 board; no control bus, clock derived from BCK)
+// I2S out. V1 boards have a PCM5101 DAC (no control bus, clock derived from BCK);
+// V2 boards have an ES8311 codec on I2C that needs MCLK and an amp enable pin.
 #define PIN_I2S_BCLK 48
 #define PIN_I2S_WS   38
 #define PIN_I2S_DOUT 47
+#define PIN_I2S_MCLK 2   // V2 only
+#define PIN_PA_EN    15  // V2 only: NS4150B amplifier enable, active high
+#define ES8311_ADDR  0x18
 
 static i2c_master_bus_handle_t s_i2c_bus;
 static esp_lcd_panel_io_handle_t s_panel_io, s_touch_io;
@@ -58,6 +62,7 @@ static esp_lcd_touch_handle_t s_tp;
 static bool s_rotated;
 static esp_io_expander_handle_t s_expander;
 static i2s_chan_handle_t s_i2s_tx;
+static i2c_master_dev_handle_t s_es8311;  // non-NULL on V2 boards
 static bool s_i2s_enabled;
 static int s_rate, s_channels;
 static int s_vol_q15 = 32768 / 2;
@@ -399,8 +404,45 @@ esp_err_t board_display_init(lv_display_t **out_disp)
     return ESP_OK;
 }
 
+static esp_err_t es8311_write(uint8_t reg, uint8_t val)
+{
+    const uint8_t buf[2] = {reg, val};
+    return i2c_master_transmit(s_es8311, buf, sizeof(buf), 100);
+}
+
+// Slave mode, MCLK from the MCLK pin at 256 x fs, 16-bit I2S. With a fixed 256 x fs ratio the
+// clock dividers are the same at every sample rate (see Espressif's es8311 coefficient table).
+static esp_err_t es8311_init(void)
+{
+    static const uint8_t seq[][2] = {
+        {0x00, 0x1F}, {0x00, 0x00}, {0x00, 0x80},  // reset, power on, slave mode
+        {0x01, 0x3F},                              // all clocks on, MCLK from pin
+        {0x02, 0x00}, {0x03, 0x10}, {0x04, 0x10},  // pre-div/mult 1, single speed, ADC/DAC OSR
+        {0x05, 0x00}, {0x06, 0x03}, {0x07, 0x00}, {0x08, 0xFF},
+        {0x09, 0x0C}, {0x0A, 0x0C},                // SDP in/out: I2S, 16-bit
+        {0x0D, 0x01}, {0x0E, 0x02},                // power up analog
+        {0x12, 0x00}, {0x13, 0x10},                // power up DAC, enable output drive
+        {0x1C, 0x6A}, {0x37, 0x08},                // bypass ADC/DAC equalisers
+        {0x31, 0x00},                              // unmute
+        {0x32, 0xBF},                              // DAC 0 dB; volume is applied in software
+    };
+    for (size_t i = 0; i < sizeof(seq) / sizeof(seq[0]); i++) {
+        ESP_RETURN_ON_ERROR(es8311_write(seq[i][0], seq[i][1]), TAG, "ES8311 reg %02x", seq[i][0]);
+        if (i == 0) vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    return ESP_OK;
+}
+
 esp_err_t board_audio_init(void)
 {
+    const bool v2 = s_i2c_bus && i2c_master_probe(s_i2c_bus, ES8311_ADDR, 50) == ESP_OK;
+    ESP_LOGI(TAG, "audio: %s", v2 ? "V2 board (ES8311)" : "V1 board (PCM5101)");
+    if (v2) {
+        const gpio_config_t pa = {.pin_bit_mask = BIT64(PIN_PA_EN), .mode = GPIO_MODE_OUTPUT};
+        gpio_config(&pa);
+        gpio_set_level(PIN_PA_EN, 0);
+    }
+
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
     chan_cfg.dma_desc_num = 8;
@@ -410,7 +452,7 @@ esp_err_t board_audio_init(void)
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(44100),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
-            .mclk = GPIO_NUM_NC,
+            .mclk = v2 ? PIN_I2S_MCLK : GPIO_NUM_NC,
             .bclk = PIN_I2S_BCLK,
             .ws = PIN_I2S_WS,
             .dout = PIN_I2S_DOUT,
@@ -420,6 +462,16 @@ esp_err_t board_audio_init(void)
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx, &std_cfg), TAG, "I2S std mode");
     s_rate = 44100;
     s_channels = 2;
+
+    if (v2) {
+        const i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = ES8311_ADDR,
+            .scl_speed_hz = 100000,
+        };
+        ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(s_i2c_bus, &dev_cfg, &s_es8311), TAG, "ES8311 device");
+        ESP_RETURN_ON_ERROR(es8311_init(), TAG, "ES8311 init");
+    }
     return ESP_OK;
 }
 
@@ -440,6 +492,7 @@ esp_err_t board_audio_open(int sample_rate, int channels, int bits)
     s_rate = sample_rate;
     s_channels = channels;
     s_i2s_enabled = true;
+    if (s_es8311) gpio_set_level(PIN_PA_EN, 1);
     ESP_LOGI(TAG, "audio out %d Hz x%d", sample_rate, channels);
     return ESP_OK;
 }
@@ -447,6 +500,7 @@ esp_err_t board_audio_open(int sample_rate, int channels, int bits)
 void board_audio_close(void)
 {
     if (s_i2s_enabled) {
+        if (s_es8311) gpio_set_level(PIN_PA_EN, 0);
         i2s_channel_disable(s_i2s_tx);
         s_i2s_enabled = false;
     }

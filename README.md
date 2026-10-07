@@ -58,8 +58,8 @@ Captured on the device itself.
 ### What you need
 
 - A **[Waveshare ESP32-S3-Touch-LCD-1.85C](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.85C)**
-  (16 MB flash, 8 MB PSRAM). This firmware targets the board's **V1** audio hardware; see
-  [Hardware](#hardware).
+  (16 MB flash, 8 MB PSRAM). Both the **V1** and **V2** audio hardware are supported and detected
+  automatically; see [Hardware](#hardware).
 - An **Audiobookshelf server** that the device can reach over 2.4 GHz Wi-Fi.
 - Optional: a microSD card (FAT formatted) for caching and downloads, and a 3.7 V LiPo battery
   with an MX1.25 connector.
@@ -157,7 +157,7 @@ and asks you to sign in again only if the server ends the session.
 
 ## Limitations
 
-- Only tested on one V1 board. V2 boards have different audio hardware and need porting.
+- Tested on one V1 board and one V2 board. V2 support covers playback only; its microphones are unused.
 - Greek, Chinese/Japanese/Korean and emoji don't display.
 - Without an SD card, the first library load and covers take a few seconds after each start.
 - A few unusual JPEG covers can't be decoded and show a title card instead.
@@ -170,7 +170,7 @@ and asks you to sign in again only if the server ends the session.
 
 ### Hardware
 
-**[Waveshare ESP32-S3-Touch-LCD-1.85C](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.85C)**, **V1 revision**:
+**[Waveshare ESP32-S3-Touch-LCD-1.85C](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.85C)**, **V1 and V2 revisions**:
 
 | Part | Details |
 | --- | --- |
@@ -179,7 +179,7 @@ and asks you to sign in again only if the server ends the session.
 | Display | 1.85" round 360×360 IPS, ST77916 over QSPI |
 | Touch | CST816T capacitive (I2C) |
 | Storage | microSD slot (1-bit SDMMC) |
-| Audio | PCM5101 I2S DAC + NS8002 amplifier, onboard speaker |
+| Audio | V1: PCM5101 I2S DAC + NS8002 amplifier. V2: ES8311 codec + NS4150B amplifier (ES7210 mic ADC unused). Onboard speaker |
 | IO expander | TCA9554 (LCD/touch resets, amp enable) |
 | Battery | MX1.25 LiPo connector, ETA6098 charger, voltage on GPIO8 (1:3 divider) |
 
@@ -191,17 +191,19 @@ Pin assignments (see `main/hardware/board.c`):
 | LCD QSPI SCK, D0–D3, CS | 40, 46, 45, 42, 41, 21 |
 | LCD backlight (PWM) | 5 |
 | Touch interrupt | 4 |
-| I2S BCK / LRCK / DOUT (to PCM5101) | 48 / 38 / 47 |
+| I2S BCK / LRCK / DOUT (to PCM5101 or ES8311) | 48 / 38 / 47 |
+| I2S MCLK (V2 only) | 2 |
+| Amplifier enable (V2 only) | 15 |
 | LCD reset, touch reset | expander pins EXIO2, EXIO1 |
 | microSD CLK / CMD / D0 | 14 / 17 / 16 |
 | Battery voltage (ADC1 ch7) | 8 |
 | BOOT button | 0 |
 
-**Board revisions matter.** Waveshare ships two audio variants. V2 has an ES8311 codec and ES7210
-microphone ADC on I2C, and Waveshare's demo code targets it. V1, which this firmware targets, has
-a PCM5101 DAC with no control bus, so volume is applied in software. If an I2C scan shows
-devices at 0x18/0x40 you have V2, and `board_audio_*` in `main/hardware/board.c` needs porting to
-the ES8311.
+**Board revisions.** Waveshare ships two audio variants. V1 has a PCM5101 DAC with no control
+bus. V2 has an ES8311 codec (I2C 0x18) and ES7210 microphone ADC (0x40), needs MCLK on GPIO2, and
+gates its amplifier with GPIO15. `board_audio_init()` probes for the ES8311 at start-up and
+configures whichever is present; the log shows `audio: V1 board (PCM5101)` or
+`audio: V2 board (ES8311)`. On both, volume is applied in software (the ES8311 is left at 0 dB).
 
 ### How playback works
 
