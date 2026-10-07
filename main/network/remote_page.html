@@ -83,6 +83,8 @@ section h2{font-size:13px;color:var(--accent);margin:10px 0 2px;text-transform:u
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 .row>span:first-child{white-space:nowrap}
+.row.with-hint{flex-wrap:wrap}
+.hint{flex-basis:100%;margin:0;font-size:13px;color:var(--muted);line-height:1.4}
 #s-storage{text-align:right}
 .row select{flex:0 1 auto;background:var(--bg);padding:8px}
 .row input[type=range]{flex:0 1 55%}
@@ -178,7 +180,10 @@ nav button[aria-selected=true]{color:var(--accent)}
       <h2>Screen</h2>
       <div class="row"><span>Brightness</span><select id="s-brightness"></select></div>
       <div class="row"><span>Screen off after</span><select id="s-screen_off_s"></select></div>
-      <div class="row"><span>Sleep after screen off</span><select id="s-sleep_min"></select></div>
+      <div class="row with-hint"><span>Sleep after screen off</span><select id="s-sleep_min"></select>
+        <p class="hint">When nothing is playing or downloading, the device then goes into deep sleep to
+          save battery. It drops off Wi-Fi, so this page can't reach it until you touch its screen or
+          press BOOT.</p></div>
       <div class="row"><span>Upside down</span><label class="switch"><input type="checkbox" id="s-rotate180"><span></span></label></div>
     </section>
     <section>
