@@ -138,6 +138,20 @@ int ui_find_book(const char *item_id)
     return -1;
 }
 
+int ui_book_list(const abs_book_t **books)
+{
+    *books = g_books;
+    return g_book_count;
+}
+
+bool ui_play_item(const char *item_id)
+{
+    const int i = ui_find_book(item_id);
+    if (i < 0) return false;
+    ui_play_book(i);
+    return true;
+}
+
 lv_obj_t *ui_add_book_row(lv_obj_t *list, int book_index)
 {
     const abs_book_t *b = &g_books[book_index];
@@ -474,6 +488,11 @@ const abs_library_t *ui_libraries(int *count, const char **selected_id)
     *count = s_lib_count;
     *selected_id = s_lib_selected;
     return s_libs;
+}
+
+const abs_library_t *ui_library_list(int *count, const char **selected_id)
+{
+    return ui_libraries(count, selected_id);
 }
 
 bool ui_library_is_podcast(void)

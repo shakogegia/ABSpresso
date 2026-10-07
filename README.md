@@ -37,6 +37,8 @@ phone needed.
 - **Battery aware**: battery level and charging state in the status row, a dimming screen, screen
   off, and deep sleep when idle.
 - **Physical controls**: BOOT plays and pauses, or puts the device to sleep when held.
+- **Remote control from your phone**: open `http://abspresso.local` on the same Wi-Fi for Now
+  Playing, the library, downloads and settings. Add it to the home screen and it works like an app.
 - Accented characters, Cyrillic and Vietnamese titles display correctly.
 
 ## Screenshots
@@ -132,6 +134,34 @@ blank to keep the saved one.
 
 The device keeps the sign-in session's tokens, never your password. It renews them automatically
 and asks you to sign in again only if the server ends the session.
+
+### Remote control
+
+Once the device is on your Wi-Fi, open **http://abspresso.local** on a phone or computer on the
+same network (or the device's IP address, shown in your router). It's a small web page served by
+the device itself:
+
+| Now Playing | Library | Downloads | Settings |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/media/remote/remote_playing.png" width="180"> | <img src="docs/media/remote/remote_library.png" width="180"> | <img src="docs/media/remote/remote_downloads.png" width="180"> | <img src="docs/media/remote/remote_settings.png" width="180"> |
+
+- **Now Playing**: play/pause, skip back/forward, previous/next chapter, a chapter scrubber and
+  volume. With nothing loaded, Play resumes your latest book.
+- **Library**: search, sort by recent, A-Z or recently added, and tap a book to play it on the
+  device.
+- **Downloads**: save books to the SD card for offline listening, follow their progress, cancel
+  them or delete saved copies.
+- **Settings**: library, skip lengths, brightness, screen-off and sleep timers, and screen
+  rotation. Changes apply on the device straight away.
+
+On an iPhone, use Safari's **Share → Add to Home Screen** for a full-screen app icon;
+`http://abspresso.local/#library` (or `#downloads`, `#settings`) opens on that tab. Covers load
+from your Audiobookshelf server, or from the device's SD card cache when the server doesn't
+serve them. While the device is in deep sleep it's off the network: touch its screen or press
+BOOT to wake it.
+
+There's no sign-in on the remote: anyone on your Wi-Fi can control the device (they never see
+your Audiobookshelf credentials).
 
 ### Buttons
 
@@ -260,13 +290,43 @@ before it's written to NVS. Access tokens are renewed with `POST /auth/refresh` 
 answers 401. The network list is scanned once before the access point starts, because a scan
 takes the radio off channel for seconds and drops connected phones.
 
+### Remote control API
+
+`network/remote.c` serves the page (`network/remote_page.html`, embedded in the firmware) and a
+small JSON API on port 80, advertised over mDNS as `abspresso.local`. Any app or script on the
+network can use it:
+
+| Request | Does |
+| --- | --- |
+| `GET /api/status` | What's playing: state, title, chapter, position, duration, volume |
+| `GET /api/books` | The library shown on the device, with progress and download state |
+| `GET /api/cover?id=` | A cover from the SD card cache |
+| `POST /api/toggle` | Play / pause |
+| `POST /api/play?id=` | Play a book |
+| `POST /api/skip?dir=-1` or `1` | Skip back / forward by the configured lengths |
+| `POST /api/seek?to=` | Jump to a position in the book (seconds) |
+| `POST /api/chapter?d=-1` or `1` | Previous / next chapter |
+| `POST /api/volume?v=0-100` | Set the volume |
+| `POST /api/stop` | Stop playback |
+| `GET /api/downloads` | SD card space and downloads in progress or saved |
+| `POST /api/download?id=` (`&remove=1`) | Download a book (or cancel / delete it) |
+| `GET /api/settings`, `POST /api/settings?...` | Read or change device settings |
+| `POST /api/library?id=` | Switch library |
+
+The server runs at low priority on the core the audio fetch doesn't use, with few sockets, so a
+burst of requests can't starve the audio stream; the page also loads covers two at a time. Changes
+go through the same functions the touchscreen uses, under the LVGL lock, so the device's own
+screens stay in sync. The server stops while the setup portal is open (it needs port 80). The
+station gets an IPv6 link-local address only, so mDNS can answer IPv6 lookups straight away
+(otherwise phones and Macs wait about 5 s for one before falling back to IPv4).
+
 ### Project layout
 
 ```
 main/
   main.c                 startup: display, Wi-Fi, library load, refresh loop
   hardware/              board bring-up, battery, power (dim/off/sleep, BOOT button), SD card
-  network/               Wi-Fi, setup portal, Audiobookshelf REST client
+  network/               Wi-Fi, setup portal, remote control web page and API, Audiobookshelf REST client
   app/                   settings (NVS), library catalog and cache, covers, downloads, player, text helpers
   ui/                    UI shell, PSRAM allocator for LVGL, generated fonts, screenshot capture
     widgets/             cover carousel, switcher pill, status row
