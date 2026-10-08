@@ -11,6 +11,7 @@
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "lwip/sockets.h"
 #include "esp_lvgl_port.h"
 #include "mdns.h"
 
@@ -201,19 +202,67 @@ static esp_err_t on_status(httpd_req_t *req)
     buf_printf(&b, ",\"sleep\":\"%s\",\"sleep_left\":%.0f", SLEEP[st.sleep_mode], st.sleep_left);
     buf_printf(&b, ",\"skip_back\":%d,\"skip_fwd\":%d,", cfg->skip_back_s, cfg->skip_fwd_s);
     buf_str(&b, "server", cfg->server);  // the page loads covers from it (they need no sign-in)
+    char host[MDNS_NAME_BUF_LEN] = "";
+    mdns_hostname_get(host);
+    buf_append(&b, ",", 1);
+    buf_str(&b, "host", host[0] ? host : "abspresso");
     buf_append(&b, "}", 1);
     return send_buf(req, &b);
 }
 
-static esp_err_t on_books(httpd_req_t *req)
+// A copy of the book list taken under the LVGL lock (the UI owns the array and swaps it under
+// that lock), so escaping thousands of titles into JSON happens after releasing it. One PSRAM
+// block: the records, then their strings. Caller frees.
+typedef struct {
+    char id[40];
+    const char *title, *author;
+    double duration, last_update, added_at;
+    float progress;
+    bool finished, podcast;
+} book_rec_t;
+
+static book_rec_t *snapshot_books(int *count)
 {
-    buf_t b = {0};
-    buf_append(&b, "[", 1);
-    lvgl_port_lock(0);  // the UI owns the book array and swaps it under this lock
+    lvgl_port_lock(0);
     const abs_book_t *books;
     const int n = ui_book_list(&books);
+    size_t strings = 0;
     for (int i = 0; i < n; i++) {
-        const abs_book_t *bk = &books[i];
+        strings += strlen(books[i].title ? books[i].title : "") + strlen(books[i].author ? books[i].author : "") + 2;
+    }
+    book_rec_t *recs = heap_caps_malloc(n * sizeof(book_rec_t) + strings + 1, MALLOC_CAP_SPIRAM);
+    if (recs) {
+        char *p = (char *)(recs + n);
+        for (int i = 0; i < n; i++) {
+            const abs_book_t *bk = &books[i];
+            book_rec_t *r = &recs[i];
+            strlcpy(r->id, bk->id, sizeof(r->id));
+            r->duration = bk->duration;
+            r->last_update = bk->last_update;
+            r->added_at = bk->added_at;
+            r->progress = bk->progress;
+            r->finished = bk->finished;
+            r->podcast = bk->podcast;
+            r->title = p;
+            p = stpcpy(p, bk->title ? bk->title : "") + 1;
+            r->author = p;
+            p = stpcpy(p, bk->author ? bk->author : "") + 1;
+        }
+    }
+    lvgl_port_unlock();
+    *count = recs ? n : 0;
+    return recs;
+}
+
+static esp_err_t on_books(httpd_req_t *req)
+{
+    int n;
+    book_rec_t *books = snapshot_books(&n);
+    if (!books) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
+    buf_t b = {0};
+    buf_append(&b, "[", 1);
+    for (int i = 0; i < n; i++) {
+        const book_rec_t *bk = &books[i];
         buf_append(&b, i ? ",{" : "{", i ? 2 : 1);
         buf_str(&b, "id", bk->id);
         buf_append(&b, ",", 1);
@@ -227,7 +276,7 @@ static esp_err_t on_books(httpd_req_t *req)
         buf_printf(&b, ",\"podcast\":%s,\"dl\":\"%s\",\"dl_pct\":%d}", bk->podcast ? "true" : "false",
                    dl_name(dl), pct);
     }
-    lvgl_port_unlock();
+    free(books);
     buf_append(&b, "]", 1);
     return send_buf(req, &b);
 }
@@ -327,9 +376,8 @@ static esp_err_t on_downloads(httpd_req_t *req)
     buf_t b = {0};
     buf_printf(&b, "{\"sd\":%s,\"free\":%llu,\"total\":%llu,\"items\":[", storage_ready() ? "true" : "false",
                (unsigned long long)free_b, (unsigned long long)total_b);
-    lvgl_port_lock(0);
-    const abs_book_t *books;
-    const int n = ui_book_list(&books);
+    int n;
+    book_rec_t *books = snapshot_books(&n);
     bool first = true;
     for (int i = 0; i < n; i++) {
         int pct;
@@ -340,7 +388,7 @@ static esp_err_t on_downloads(httpd_req_t *req)
         buf_str(&b, "id", books[i].id);
         buf_printf(&b, ",\"dl\":\"%s\",\"dl_pct\":%d}", dl_name(dl), pct);
     }
-    lvgl_port_unlock();
+    free(books);
     buf_append(&b, "]}", 2);
     return send_buf(req, &b);
 }
@@ -392,7 +440,7 @@ static esp_err_t on_get_settings(httpd_req_t *req)
     lvgl_port_lock(0);
     int n;
     const char *selected;
-    const abs_library_t *libs = ui_library_list(&n, &selected);
+    const abs_library_t *libs = ui_libraries(&n, &selected);
     buf_str(&b, "library", selected);
     buf_append(&b, ",\"libraries\":[", 14);
     for (int i = 0; i < n; i++) {
@@ -451,7 +499,7 @@ static esp_err_t on_library(httpd_req_t *req)
     lvgl_port_lock(0);
     int n;
     const char *selected;
-    const abs_library_t *libs = ui_library_list(&n, &selected);
+    const abs_library_t *libs = ui_libraries(&n, &selected);
     int found = -1;
     for (int i = 0; i < n; i++) {
         if (strcmp(libs[i].id, id) == 0) found = i;
@@ -465,6 +513,84 @@ static esp_err_t on_library(httpd_req_t *req)
     lvgl_port_unlock();
     if (found < 0) return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "no such library");
     return send_ok(req);
+}
+
+/* ---------- request guard ---------- */
+
+// No login, but only this device's own page (or a script) may drive it:
+//  - Host must name the device (abspresso[-N][.local], mDNS adds -N on a name clash) or be an IP
+//    literal, so a DNS-rebinding page can't read the API;
+//  - a POST carrying an Origin must come from that same host, so other web pages can't send
+//    commands. curl and scripts send no Origin and keep working.
+
+// Strips an optional ":80" and IPv6 brackets/zone; false if another port is given.
+static bool host_part(const char *in, char *out, size_t len)
+{
+    strlcpy(out, in, len);
+    char *port = NULL;
+    if (out[0] == '[') {
+        char *end = strchr(out, ']');
+        if (!end) return false;
+        port = end[1] == ':' ? end + 1 : NULL;
+        *end = 0;
+        memmove(out, out + 1, strlen(out));
+        char *zone = strchr(out, '%');
+        if (zone) *zone = 0;
+    } else {
+        port = strchr(out, ':');
+    }
+    if (port) {
+        if (strcmp(port, ":80") != 0) return false;
+        *port = 0;
+    }
+    return out[0] != 0;
+}
+
+static bool host_allowed(const char *header)
+{
+    char h[96];
+    if (!host_part(header, h, sizeof(h))) return false;
+    struct in_addr a4;
+    struct in6_addr a6;
+    if (inet_pton(AF_INET, h, &a4) == 1 || inet_pton(AF_INET6, h, &a6) == 1) return true;
+    for (char *c = h; *c; c++) *c = tolower((unsigned char)*c);
+    size_t n = strlen(h);
+    if (n > 6 && strcmp(h + n - 6, ".local") == 0) h[n -= 6] = 0;
+    if (strncmp(h, "abspresso", 9) != 0) return false;
+    const char *rest = h + 9;
+    if (!*rest) return true;
+    if (*rest++ != '-' || !*rest) return false;
+    for (; *rest; rest++) {
+        if (!isdigit((unsigned char)*rest)) return false;
+    }
+    return true;
+}
+
+// Origin is "scheme://host[:port]"; its host must be the one the request was sent to.
+static bool origin_matches(const char *origin, const char *host_header)
+{
+    const char *sep = strstr(origin, "://");
+    if (strncmp(origin, "http://", 7) != 0 || !sep) return false;  // also rejects "null"
+    char o[96], h[96];
+    if (!host_part(sep + 3, o, sizeof(o)) || !host_part(host_header, h, sizeof(h))) return false;
+    return strcasecmp(o, h) == 0;
+}
+
+typedef esp_err_t (*handler_fn)(httpd_req_t *req);
+
+static esp_err_t guarded(httpd_req_t *req)
+{
+    char host[96], origin[128];
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK || !host_allowed(host)) {
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "unknown host");
+    }
+    if (req->method == HTTP_POST) {
+        const esp_err_t err = httpd_req_get_hdr_value_str(req, "Origin", origin, sizeof(origin));
+        if (err != ESP_ERR_NOT_FOUND && (err != ESP_OK || !origin_matches(origin, host))) {
+            return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "cross-site request");
+        }
+    }
+    return ((handler_fn)req->user_ctx)(req);
 }
 
 /* ---------- start / stop ---------- */
@@ -481,6 +607,8 @@ static void mdns_start(void)
     mdns_instance_name_set("ABSpresso");
     mdns_service_add("ABSpresso", "_http", "_tcp", 80, NULL, 0);
     started = true;
+    // If another device already uses the name, mDNS renames this one (abspresso-2, ...);
+    // /api/status reports the name in use.
 }
 
 void remote_start(void)
@@ -491,7 +619,8 @@ void remote_start(void)
     cfg.stack_size = 6144;
     cfg.max_uri_handlers = 20;
     // Stay out of the audio pipeline's way: below its tasks' priorities, off the core the
-    // fetch task streams on, and few sockets (lwIP has 10 in all; streaming needs some).
+    // fetch task streams on, and few sockets: this holds up to 5 (3 clients, plus listen and
+    // control) of lwIP's 16, leaving room for the fetch, sync, download, cover and library tasks.
     cfg.task_priority = 2;
     cfg.core_id = 1;
     cfg.max_open_sockets = 3;
@@ -502,26 +631,34 @@ void remote_start(void)
         s_httpd = NULL;
         return;
     }
-    const httpd_uri_t uris[] = {
-        {.uri = "/", .method = HTTP_GET, .handler = on_page},
-        {.uri = "/api/status", .method = HTTP_GET, .handler = on_status},
-        {.uri = "/api/books", .method = HTTP_GET, .handler = on_books},
-        {.uri = "/api/cover", .method = HTTP_GET, .handler = on_cover},
-        {.uri = "/api/settings", .method = HTTP_GET, .handler = on_get_settings},
-        {.uri = "/api/settings", .method = HTTP_POST, .handler = on_set_settings},
-        {.uri = "/api/library", .method = HTTP_POST, .handler = on_library},
-        {.uri = "/api/toggle", .method = HTTP_POST, .handler = on_toggle},
-        {.uri = "/api/play", .method = HTTP_POST, .handler = on_play},
-        {.uri = "/api/skip", .method = HTTP_POST, .handler = on_skip},
-        {.uri = "/api/seek", .method = HTTP_POST, .handler = on_seek},
-        {.uri = "/api/chapter", .method = HTTP_POST, .handler = on_chapter},
-        {.uri = "/api/volume", .method = HTTP_POST, .handler = on_volume},
-        {.uri = "/api/stop", .method = HTTP_POST, .handler = on_stop},
-        {.uri = "/api/sleep", .method = HTTP_POST, .handler = on_sleep},
-        {.uri = "/api/downloads", .method = HTTP_GET, .handler = on_downloads},
-        {.uri = "/api/download", .method = HTTP_POST, .handler = on_download},
+    static const struct {
+        const char *uri;
+        httpd_method_t method;
+        handler_fn fn;
+    } routes[] = {
+        {"/", HTTP_GET, on_page},
+        {"/api/status", HTTP_GET, on_status},
+        {"/api/books", HTTP_GET, on_books},
+        {"/api/cover", HTTP_GET, on_cover},
+        {"/api/settings", HTTP_GET, on_get_settings},
+        {"/api/settings", HTTP_POST, on_set_settings},
+        {"/api/library", HTTP_POST, on_library},
+        {"/api/toggle", HTTP_POST, on_toggle},
+        {"/api/play", HTTP_POST, on_play},
+        {"/api/skip", HTTP_POST, on_skip},
+        {"/api/seek", HTTP_POST, on_seek},
+        {"/api/chapter", HTTP_POST, on_chapter},
+        {"/api/volume", HTTP_POST, on_volume},
+        {"/api/stop", HTTP_POST, on_stop},
+        {"/api/sleep", HTTP_POST, on_sleep},
+        {"/api/downloads", HTTP_GET, on_downloads},
+        {"/api/download", HTTP_POST, on_download},
     };
-    for (int i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s_httpd, &uris[i]);
+    for (int i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
+        const httpd_uri_t u = {.uri = routes[i].uri, .method = routes[i].method, .handler = guarded,
+                               .user_ctx = (void *)routes[i].fn};
+        httpd_register_uri_handler(s_httpd, &u);
+    }
     mdns_start();
     ESP_LOGI(TAG, "remote control on http://abspresso.local (internal RAM free %u)",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));

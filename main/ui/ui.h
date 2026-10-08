@@ -44,7 +44,7 @@ int ui_book_list(const abs_book_t **books);
 // Plays a book from the library as if it was tapped. False if it isn't in the shown library.
 bool ui_play_item(const char *item_id);
 // The server's libraries and the selected one; switching goes through ui_request_library().
-const abs_library_t *ui_library_list(int *count, const char **selected_id);
+const abs_library_t *ui_libraries(int *count, const char **selected_id);
 // Saves and applies the screen rotation, as the Settings switch does.
 void ui_set_rotation(bool rotate180);
 // Redraws Settings after a setting was changed from outside the UI.

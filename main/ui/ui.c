@@ -490,11 +490,6 @@ const abs_library_t *ui_libraries(int *count, const char **selected_id)
     return s_libs;
 }
 
-const abs_library_t *ui_library_list(int *count, const char **selected_id)
-{
-    return ui_libraries(count, selected_id);
-}
-
 bool ui_library_is_podcast(void)
 {
     for (int i = 0; i < s_lib_count; i++) {

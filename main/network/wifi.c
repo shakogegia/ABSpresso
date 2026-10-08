@@ -19,6 +19,13 @@ static EventGroupHandle_t s_events;
 static volatile bool s_auto_reconnect = true;  // off while setup is scanning or testing
 static esp_netif_t *s_sta;
 
+static esp_err_t no_ip6_autoconfig(void *ctx)
+{
+    struct netif *lwip = esp_netif_get_netif_impl(s_sta);
+    if (lwip) lwip->ip6_autoconfig_enabled = 0;
+    return ESP_OK;
+}
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -28,8 +35,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         // one, phones and Macs wait out a ~5 s IPv6 lookup before falling back to IPv4. Only
         // link-local: routable addresses from the router's adverts may not be reachable on the
         // LAN, and browsers that pick one then fail to connect.
-        struct netif *lwip = esp_netif_get_netif_impl(s_sta);
-        if (lwip) lwip->ip6_autoconfig_enabled = 0;
+        esp_netif_tcpip_exec(no_ip6_autoconfig, NULL);  // lwIP state: change it on the TCP/IP task
         esp_netif_create_ip6_linklocal(s_sta);
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(s_events, BIT_CONNECTED);

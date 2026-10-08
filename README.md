@@ -164,7 +164,9 @@ serve them. While the device is in deep sleep it's off the network: touch its sc
 BOOT to wake it.
 
 There's no sign-in on the remote: anyone on your Wi-Fi can control the device (they never see
-your Audiobookshelf credentials).
+your Audiobookshelf credentials). Other web pages can't, though: the device only answers requests
+addressed to it by name or IP, and rejects commands sent from another site. With two devices on
+one network, the second becomes `abspresso-2.local`.
 
 ### Buttons
 
@@ -316,6 +318,11 @@ network can use it:
 | `POST /api/download?id=` (`&remove=1`) | Download a book (or cancel / delete it) |
 | `GET /api/settings`, `POST /api/settings?...` | Read or change device settings |
 | `POST /api/library?id=` | Switch library |
+
+Requests must name the device in `Host` (`abspresso`, `abspresso-N`, optionally `.local`, or an IP
+address, on port 80), which stops DNS rebinding. A `POST` that carries an `Origin` header must come
+from that same host, which stops other web pages sending commands; scripts and `curl` send no
+`Origin` and aren't affected. Anything else gets `403`.
 
 The server runs at low priority on the core the audio fetch doesn't use, with few sockets, so a
 burst of requests can't starve the audio stream; the page also loads covers two at a time. Changes
