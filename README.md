@@ -67,7 +67,7 @@ Captured on the device itself.
 ### Option 1: flash a release
 
 Download the files from the **[latest release](https://github.com/tomekent/ABSpresso/releases/latest)**
-(currently [v0.1.0](https://github.com/tomekent/ABSpresso/releases/tag/v0.1.0)):
+(currently [v0.1.1](https://github.com/tomekent/ABSpresso/releases/tag/v0.1.1)):
 
 - `abspresso-<version>-full.bin`: a single image for a **new device**. It also clears saved
   settings.
@@ -81,7 +81,7 @@ connect to the board, add the `-full.bin` file at address `0x0`, and program.
 
 ```sh
 # New device
-esptool.py --chip esp32s3 -b 460800 write_flash 0x0 abspresso-v0.1.0-full.bin
+esptool.py --chip esp32s3 -b 460800 write_flash 0x0 abspresso-v0.1.1-full.bin
 
 # Update, keeping settings (in the unzipped parts folder)
 esptool.py --chip esp32s3 -b 460800 write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB \
