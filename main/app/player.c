@@ -625,6 +625,10 @@ static void sleep_set(int minutes)
 static void sleep_tick(player_state_t st, double dt)
 {
     if (s_sleep_mode == PLAYER_SLEEP_OFF) return;
+    if (st == PLAYER_FINISHED || st == PLAYER_IDLE) {
+        sleep_set(0);  // nothing left to pause (e.g. the book ended before the chapter timer fired)
+        return;
+    }
     if (st != PLAYER_PLAYING) {
         sleep_restore_volume();  // paused during the fade: come back at full volume
         sleep_publish();

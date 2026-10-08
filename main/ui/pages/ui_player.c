@@ -102,17 +102,26 @@ static void on_skip(lv_event_t *e)
     snprintf(buf, sizeof(buf), "%+d s", s);
     flash_state(buf);
 }
-// Each tap moves to the next sleep timer choice: off, 15, 30, 45, 60 min, end of chapter.
-static const int SLEEP_CHOICES[] = {0, 15, 30, 45, 60, PLAYER_SLEEP_END_OF_CHAPTER};
-static int s_sleep_choice;
+// Each tap moves to the next sleep timer choice: off, 15, 30, 45, 60 min, end of chapter, off.
+// The step comes from the player's state, so a timer set from the remote carries on from there:
+// a running timer moves to the first choice longer than the minutes left.
+static int next_sleep_choice(const player_status_t *st)
+{
+    static const int MINUTES[] = {15, 30, 45, 60};
+    if (st->sleep_mode == PLAYER_SLEEP_CHAPTER) return 0;
+    if (st->sleep_mode == PLAYER_SLEEP_OFF) return MINUTES[0];
+    const int left = (int)(st->sleep_left + 59) / 60;
+    for (int i = 0; i < sizeof(MINUTES) / sizeof(MINUTES[0]); i++) {
+        if (MINUTES[i] > left) return MINUTES[i];
+    }
+    return PLAYER_SLEEP_END_OF_CHAPTER;
+}
 
 static void on_sleep(lv_event_t *e)
 {
     player_status_t st;
     player_get_status(&st);
-    if (st.sleep_mode == PLAYER_SLEEP_OFF) s_sleep_choice = 0;  // it ran out or was cleared elsewhere
-    s_sleep_choice = (s_sleep_choice + 1) % (int)(sizeof(SLEEP_CHOICES) / sizeof(SLEEP_CHOICES[0]));
-    const int m = SLEEP_CHOICES[s_sleep_choice];
+    const int m = next_sleep_choice(&st);
     player_set_sleep(m);
     char buf[40];
     if (m == 0) snprintf(buf, sizeof(buf), "Sleep timer off");
